@@ -11749,15 +11749,27 @@ function Library:CreateWindow(WindowInfo)
             SetSpring(Springs.W, W)
             SetSpring(Springs.H, H)
             SetSpring(Springs.R, 0)
-            TweenService:Create(Island, ColorInfo, { BackgroundColor3 = MainFrame.BackgroundColor3 }):Play()
+            TweenService:Create(Island, TweenInfo.new(0.2, Enum.EasingStyle.Quad), {
+                BackgroundColor3 = MainFrame.BackgroundColor3,
+            }):Play()
 
-            WaitForSettle(1, function()
-                return math.abs(Springs.W.T - Springs.W.P) < 3 and math.abs(Springs.H.T - Springs.H.P) < 3
-                    and math.abs(Springs.X.T - Springs.X.P) < 3 and math.abs(Springs.Y.T - Springs.Y.P) < 3
+            -- reveal the window as soon as the blob is roughly in place instead of waiting out the wobble
+            WaitForSettle(0.6, function()
+                return math.abs(Springs.W.T - Springs.W.P) < W * 0.08 and math.abs(Springs.H.T - Springs.H.P) < H * 0.08
+                    and math.abs(Springs.X.T - Springs.X.P) < 8 and math.abs(Springs.Y.T - Springs.Y.P) < 8
             end)
 
             MainFrame.Visible = Library.Toggled
+            TweenService:Create(IslandStroke, FadeInfo, { Transparency = 1 }):Play()
+            local RevealTween = TweenService:Create(Island, TweenInfo.new(0.15, Enum.EasingStyle.Quad), {
+                BackgroundTransparency = 1,
+            })
+            RevealTween:Play()
+            RevealTween.Completed:Wait()
+
             Island.Visible = false
+            Island.BackgroundTransparency = 0
+            IslandStroke.Transparency = 0.6
             IslandMinimized, IslandBusy = false, false
         end
 
