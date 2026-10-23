@@ -1050,7 +1050,13 @@ end
 local MaxSearchResults = 50
 
 local function StripRichText(Text: string): string
-    return (Text:gsub("<[^>]+>", ""))
+    --// Results are single-line rows, so collapse newlines and cap long label texts \\--
+    local Stripped = Trim((Text:gsub("<[^>]+>", ""):gsub("%s+", " ")))
+    if #Stripped > 60 then
+        Stripped = Trim(Stripped:sub(1, 57)) .. "..."
+    end
+
+    return Stripped
 end
 
 --// Outer-to-inner list of containers that must be opened to reach a box \\--
@@ -11461,6 +11467,8 @@ function Library:CreateWindow(WindowInfo)
                 TextColor3 = if IsLast then "AccentColor" else "FontColor",
                 TextSize = IsLast and 15 or 14,
                 TextTransparency = IsLast and 0 or 0.4,
+                TextWrapped = false,
+                TextYAlignment = Enum.TextYAlignment.Center,
                 Parent = Parent,
             })
             Order += 1
