@@ -10900,6 +10900,7 @@ function Library:CreateWindow(WindowInfo)
     local TitleHolder
     local WindowTitle
     local WindowSubtitle
+    local TitleDivider
     local WindowIcon
     local RightWrapper
     local SearchBox
@@ -11352,6 +11353,13 @@ function Library:CreateWindow(WindowInfo)
             end
         end
         RefreshWindowTitleSize()
+
+        TitleDivider = New("Frame", {
+            BackgroundColor3 = "OutlineColor",
+            Position = UDim2.fromOffset(InitialLeftWidth, 0),
+            Size = UDim2.new(0, 1, 1, 0),
+            Parent = TopBar,
+        })
 
         --// Top Right Bar \\--
         RightWrapper = New("Frame", {
@@ -11902,6 +11910,7 @@ function Library:CreateWindow(WindowInfo)
         --// Compact sidebars keep the title readable by letting it span the sub-tab panel too
         local TitleWidth = if IsCompact then Width + WindowInfo.SubTabWidth else Width
         TitleHolder.Size = UDim2.new(0, TitleWidth, 1, 0)
+        TitleDivider.Position = UDim2.fromOffset(TitleWidth, 0)
         RightWrapper.Size = UDim2.new(1, -TitleWidth - 57 - 1, 1, -16)
     
         RefreshWindowTitleSize()
