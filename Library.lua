@@ -10776,7 +10776,6 @@ function Library:CreateWindow(WindowInfo)
     Library.TabSwipeOffset = math.max(1, WindowInfo.TabSwipeOffset or 26)
     Library.TabSwipeFrom = WindowInfo.TabSwipeFrom or "right"
 
-    local IsDefaultSearchbarSize = WindowInfo.SearchbarSize == UDim2.fromScale(1, 1)
     local MainFrame
     local DividerLine
     local TitleHolder
@@ -10786,9 +10785,6 @@ function Library:CreateWindow(WindowInfo)
     local WindowIcon
     local RightWrapper
     local SearchBox
-    local CurrentTabInfo
-    local CurrentTabLabel
-    local CurrentTabDescription
     local ResizeButton
     local IslandMinimized = false
     local DismissIsland, SetIslandIcon
@@ -11260,55 +11256,6 @@ function Library:CreateWindow(WindowInfo)
             VerticalAlignment = Enum.VerticalAlignment.Center,
             Padding = UDim.new(0, 8),
             Parent = RightWrapper,
-        })
-
-        CurrentTabInfo = New("Frame", {
-            Size = UDim2.fromScale(WindowInfo.DisableSearch and 1 or 0.5, 1),
-            Visible = false,
-            BackgroundTransparency = 1,
-            Parent = RightWrapper,
-        })
-
-        New("UIFlexItem", {
-            FlexMode = Enum.UIFlexMode.Grow,
-            Parent = CurrentTabInfo,
-        })
-
-        New("UIListLayout", {
-            FillDirection = Enum.FillDirection.Vertical,
-            HorizontalAlignment = Enum.HorizontalAlignment.Left,
-            VerticalAlignment = Enum.VerticalAlignment.Center,
-            Parent = CurrentTabInfo,
-        })
-
-        New("UIPadding", {
-            PaddingBottom = UDim.new(0, 8),
-            PaddingLeft = UDim.new(0, 8),
-            PaddingRight = UDim.new(0, 8),
-            PaddingTop = UDim.new(0, 8),
-            Parent = CurrentTabInfo,
-        })
-
-        CurrentTabLabel = New("TextLabel", {
-            BackgroundTransparency = 1,
-            Size = UDim2.fromScale(1, 0),
-            AutomaticSize = Enum.AutomaticSize.Y,
-            Text = "",
-            TextSize = 14,
-            TextXAlignment = Enum.TextXAlignment.Left,
-            Parent = CurrentTabInfo,
-        })
-
-        CurrentTabDescription = New("TextLabel", {
-            BackgroundTransparency = 1,
-            Size = UDim2.fromScale(1, 0),
-            AutomaticSize = Enum.AutomaticSize.Y,
-            Text = "",
-            TextWrapped = true,
-            TextSize = 14,
-            TextXAlignment = Enum.TextXAlignment.Left,
-            TextTransparency = 0.5,
-            Parent = CurrentTabInfo,
         })
 
         SearchBox = New("TextBox", {
@@ -12383,23 +12330,6 @@ function Library:CreateWindow(WindowInfo)
         RefreshWindowTitleSize()
         if not IsCompact then
             LastExpandedWidth = Width
-        end
-    end
-
-    function Window:ShowTabInfo(Name, Description)
-        CurrentTabLabel.Text = Name
-        CurrentTabDescription.Text = Description
-
-        if IsDefaultSearchbarSize then
-            SearchBox.Size = UDim2.fromScale(0.5, 1)
-        end
-        CurrentTabInfo.Visible = true
-    end
-
-    function Window:HideTabInfo()
-        CurrentTabInfo.Visible = false
-        if IsDefaultSearchbarSize then
-            SearchBox.Size = UDim2.fromScale(1, 1)
         end
     end
 
@@ -13961,10 +13891,6 @@ function Library:CreateWindow(WindowInfo)
                 }):Play()
             end
 
-            if Description then
-                Window:ShowTabInfo(Name, Description)
-            end
-
             Library:PlayTabAnimation(Tab, true)
             Tab:RefreshSides()
 
@@ -13997,7 +13923,6 @@ function Library:CreateWindow(WindowInfo)
             end
 
             Library:PlayTabAnimation(Tab, false)
-            Window:HideTabInfo()
 
             Library.PreviousTab = Tab
             Library.ActiveTab = nil
