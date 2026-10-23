@@ -881,28 +881,107 @@ function SaveManager:BuildConfigSection(Tab: any, IconName: string)
     ConfigurationBox:AddDivider()
 
     --// Manage
-    ConfigurationBox:AddDropdown("SaveManager_ConfigList", {
-        Text = "Config list",
+    --// Inline config list (always visible, click a row to select) \\--
+    do
+        local Library = SaveManager.Library
+        local RowHeight, ListHeight = 21, 140
 
-        Values = SaveManager:RefreshConfigList(),
-        AllowNull = true,
-        Multi = false,
+        local function Themed(Instance, Properties)
+            local Registry = {}
+            for Property, SchemeKey in Properties do
+                Instance[Property] = Library.Scheme[SchemeKey]
+                Registry[Property] = SchemeKey
+            end
+            Library:AddToRegistry(Instance, Registry)
+            return Instance
+        end
 
-        FormatDisplayValue = function(Value: any)
+        local Holder = Instance.new("Frame")
+        Holder.BackgroundTransparency = 1
+        Holder.Size = UDim2.new(1, 0, 0, 18 + ListHeight)
+        Holder.Parent = ConfigurationBox.Container
+
+        local Title = Themed(Instance.new("TextLabel"), { TextColor3 = "FontColor", FontFace = "Font" })
+        Title.BackgroundTransparency = 1
+        Title.Size = UDim2.new(1, 0, 0, 14)
+        Title.Text = "Configs"
+        Title.TextSize = 14
+        Title.TextXAlignment = Enum.TextXAlignment.Left
+        Title.Parent = Holder
+
+        local List = Themed(Instance.new("ScrollingFrame"), {
+            BackgroundColor3 = "BackgroundColor",
+            ScrollBarImageColor3 = "OutlineColor",
+        })
+        List.AnchorPoint = Vector2.new(0, 1)
+        List.Position = UDim2.fromScale(0, 1)
+        List.Size = UDim2.new(1, 0, 0, ListHeight)
+        List.BorderSizePixel = 0
+        List.ScrollBarThickness = 2
+        List.AutomaticCanvasSize = Enum.AutomaticSize.Y
+        List.CanvasSize = UDim2.new()
+        List.Parent = Holder
+        Themed(Instance.new("UIStroke"), { Color = "OutlineColor" }).Parent = List
+        local Corner = Instance.new("UICorner")
+        Corner.CornerRadius = UDim.new(0, (Library.CornerRadius or 4) / 2)
+        Corner.Parent = List
+        Instance.new("UIListLayout").Parent = List
+
+        local Rows = {}
+        local Object = { Value = nil, Values = {} }
+
+        local function Format(Value)
             if Value == SaveManager.AutoloadConfig then
                 return string.format("%s (autoload)", Value)
             end
-
-            return Value
-        end,
-        FormatListValue = function(Value: any)
-            if Value == SaveManager.AutoloadConfig then
-                return string.format("%s (autoload)", Value)
-            end
-
             return Value
         end
-    })
+
+        local function UpdateRows()
+            for Value, Row in Rows do
+                local Selected = Value == Object.Value
+                Row.BackgroundColor3 = Library.Scheme.MainColor
+                Row.BackgroundTransparency = Selected and 0 or 1
+                Row.TextColor3 = Selected and Library.Scheme.AccentColor or Library.Scheme.FontColor
+                Row.TextTransparency = Selected and 0 or 0.4
+                Row.Text = "  " .. Format(Value)
+            end
+        end
+
+        function Object:SetValue(Value)
+            Object.Value = Value
+            UpdateRows()
+        end
+
+        function Object:SetValues(Values)
+            for _, Row in Rows do
+                Library:RemoveFromRegistry(Row)
+                Row:Destroy()
+            end
+            table.clear(Rows)
+            Object.Values = Values
+
+            for _, Value in Values do
+                local Row = Themed(Instance.new("TextButton"), { FontFace = "Font" })
+                Row.AutoButtonColor = false
+                Row.BorderSizePixel = 0
+                Row.Size = UDim2.new(1, 0, 0, RowHeight)
+                Row.TextSize = 14
+                Row.TextXAlignment = Enum.TextXAlignment.Left
+                Row.Parent = List
+                Row.MouseButton1Click:Connect(function()
+                    Object:SetValue(if Object.Value == Value then nil else Value)
+                end)
+                Rows[Value] = Row
+            end
+            if not Rows[Object.Value] then Object.Value = nil end
+            UpdateRows()
+        end
+
+        Object:SetValues(SaveManager:RefreshConfigList())
+        ConfigList = Object
+        if ConfigurationBox.Resize then ConfigurationBox:Resize() end
+    end
 
     ConfigurationBox:AddButton({
         Text = "Load config",
@@ -1114,9 +1193,8 @@ function SaveManager:BuildConfigSection(Tab: any, IconName: string)
     end)
 
     --// Set variables
-    ConfigNameInput, ConfigList, ConfigJSONInput =
-        SaveManager.Library.Options.SaveManager_ConfigName, 
-        SaveManager.Library.Options.SaveManager_ConfigList,
+    ConfigNameInput, ConfigJSONInput =
+        SaveManager.Library.Options.SaveManager_ConfigName,
         SaveManager.Library.Options.SaveManager_JSON;
 
     --// Refresh
