@@ -6101,7 +6101,30 @@ do
         local MenuTable = Library:AddContextMenu(Gear, function()
             return UDim2.fromOffset(Popup.Width, Popup.Height)
         end, function()
-            return { -8, Gear.AbsoluteSize.Y + 6 }
+            -- Keep the popup on screen: shift it horizontally and flip it above the gear when needed --
+            local Margin = 4
+            local GearPos = Gear.AbsolutePosition
+            local Bounds = Overlay.AbsoluteSize
+            local PopupW = Popup.Width * Library.DPIScale
+            local PopupH = Popup.Height * Library.DPIScale
+
+            local X = -8
+            if GearPos.X + X + PopupW > Bounds.X - Margin then
+                X = Bounds.X - Margin - PopupW - GearPos.X
+            end
+            if GearPos.X + X < Margin then
+                X = Margin - GearPos.X
+            end
+
+            local Y = Gear.AbsoluteSize.Y + 6
+            if GearPos.Y + Y + PopupH > Bounds.Y - Margin and GearPos.Y - 6 - PopupH >= Margin then
+                Y = -PopupH - 6
+            end
+            if GearPos.Y + Y + PopupH > Bounds.Y - Margin then
+                Y = Bounds.Y - Margin - PopupH - GearPos.Y
+            end
+
+            return { X, Y }
         end, nil, function()
             UpdateGear()
         end, false, nil, "SettingsPopup")
