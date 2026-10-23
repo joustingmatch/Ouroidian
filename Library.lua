@@ -407,7 +407,7 @@ local Templates = {
         EnableCompacting = true,
         DisableCompactingSnap = false,
         SidebarCompacted = true,
-        SubTabWidth = 150,
+        SubTabWidth = 170,
         MinContainerWidth = 256,
 
         --// Snapping \\--
