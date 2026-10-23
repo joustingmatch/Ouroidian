@@ -458,7 +458,16 @@ function SaveManager:SaveJSON(ConfigName)
 
         objects = {},
         keybindMenu = nil,
+        window = nil,
     }
+
+    local MainFrame = Library.Window and Library.Window.MainFrame
+    if MainFrame then
+        CurrentData.window = {
+            position = SpecialValueParser.UDim2.Encode(MainFrame.Position),
+            size = SpecialValueParser.UDim2.Encode(MainFrame.Size),
+        }
+    end
 
     if Library.KeybindFrame then
         local Hidden = {}
@@ -588,6 +597,25 @@ function SaveManager:LoadJSON(Content: string)
             local bIndex = table.find(LoadingOrder, b.type) or math.huge
             return aIndex < bIndex
         end)
+    end
+
+    --// Window
+    local MainFrame = Library.Window and Library.Window.MainFrame
+    if MainFrame and typeof(Decoded.window) == "table" then
+        local Position = SpecialValueParser.UDim2.Decode(Decoded.window.position)
+        local Size = SpecialValueParser.UDim2.Decode(Decoded.window.size)
+
+        if Position then
+            MainFrame.Position = Position
+        end
+        if Size then
+            MainFrame.Size = Size
+            for _, Tab in Library.Tabs do
+                if Tab.Resize then
+                    Tab:Resize(true)
+                end
+            end
+        end
     end
 
     --// Keybind Menu
