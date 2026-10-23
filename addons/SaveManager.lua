@@ -928,6 +928,7 @@ function SaveManager:BuildConfigSection(Tab: any, IconName: string)
         Instance.new("UIListLayout").Parent = List
 
         local Rows = {}
+        local Hovered = nil
         local Object = { Value = nil, Values = {} }
 
         local function Format(Value)
@@ -940,10 +941,11 @@ function SaveManager:BuildConfigSection(Tab: any, IconName: string)
         local function UpdateRows()
             for Value, Row in Rows do
                 local Selected = Value == Object.Value
+                local IsHovered = Value == Hovered
                 Row.BackgroundColor3 = Library.Scheme.MainColor
-                Row.BackgroundTransparency = Selected and 0 or 1
+                Row.BackgroundTransparency = Selected and 0 or IsHovered and 0.5 or 1
                 Row.TextColor3 = Selected and Library.Scheme.AccentColor or Library.Scheme.FontColor
-                Row.TextTransparency = Selected and 0 or 0.4
+                Row.TextTransparency = (Selected or IsHovered) and 0 or 0.4
                 Row.Text = "  " .. Format(Value)
             end
         end
@@ -959,6 +961,7 @@ function SaveManager:BuildConfigSection(Tab: any, IconName: string)
                 Row:Destroy()
             end
             table.clear(Rows)
+            Hovered = nil
             Object.Values = Values
 
             for _, Value in Values do
@@ -969,6 +972,14 @@ function SaveManager:BuildConfigSection(Tab: any, IconName: string)
                 Row.TextSize = 14
                 Row.TextXAlignment = Enum.TextXAlignment.Left
                 Row.Parent = List
+                Row.MouseEnter:Connect(function()
+                    Hovered = Value
+                    UpdateRows()
+                end)
+                Row.MouseLeave:Connect(function()
+                    if Hovered == Value then Hovered = nil end
+                    UpdateRows()
+                end)
                 Row.MouseButton1Click:Connect(function()
                     Object:SetValue(if Object.Value == Value then nil else Value)
                 end)
