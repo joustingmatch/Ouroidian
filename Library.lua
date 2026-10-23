@@ -372,6 +372,7 @@ local Templates = {
     --// Library \\--
     Window = {
         Title = "No Title",
+        Subtitle = nil,
         Footer = "No Footer",
 
         Position = UDim2.fromOffset(6, 6),
@@ -10898,6 +10899,7 @@ function Library:CreateWindow(WindowInfo)
     local DividerLine
     local TitleHolder
     local WindowTitle
+    local WindowSubtitle
     local WindowIcon
     local RightWrapper
     local SearchBox
@@ -11206,8 +11208,8 @@ function Library:CreateWindow(WindowInfo)
 
         DividerLine = New("Frame", {
             BackgroundColor3 = "OutlineColor",
-            Position = UDim2.fromOffset(InitialLeftWidth, 0),
-            Size = UDim2.new(0, 1, 1, -21),
+            Position = UDim2.fromOffset(InitialLeftWidth, 49),
+            Size = UDim2.new(0, 1, 1, -70),
             Parent = MainFrame,
             ZIndex = 2
         })
@@ -11279,9 +11281,13 @@ function Library:CreateWindow(WindowInfo)
         })
         New("UIListLayout", {
             FillDirection = Enum.FillDirection.Horizontal,
-            HorizontalAlignment = Enum.HorizontalAlignment.Center,
+            HorizontalAlignment = Enum.HorizontalAlignment.Left,
             VerticalAlignment = Enum.VerticalAlignment.Center,
-            Padding = UDim.new(0, 6),
+            Padding = UDim.new(0, 8),
+            Parent = TitleHolder,
+        })
+        New("UIPadding", {
+            PaddingLeft = UDim.new(0, 10),
             Parent = TitleHolder,
         })
 
@@ -11309,10 +11315,23 @@ function Library:CreateWindow(WindowInfo)
             BackgroundTransparency = 1,
             Size = UDim2.fromOffset(0, 0),
             Text = WindowInfo.Title,
-            TextSize = 20,
+            TextSize = 18,
             TextTruncate = Enum.TextTruncate.AtEnd,
             TextXAlignment = Enum.TextXAlignment.Left,
             TextYAlignment = Enum.TextYAlignment.Center,
+            Parent = TitleHolder,
+        })
+
+        WindowSubtitle = New("TextLabel", {
+            BackgroundTransparency = 1,
+            Size = UDim2.fromOffset(0, 0),
+            Text = WindowInfo.Subtitle or "",
+            TextSize = 13,
+            TextTransparency = 0.5,
+            TextTruncate = Enum.TextTruncate.AtEnd,
+            TextXAlignment = Enum.TextXAlignment.Left,
+            TextYAlignment = Enum.TextYAlignment.Center,
+            Visible = typeof(WindowInfo.Subtitle) == "string" and WindowInfo.Subtitle ~= "",
             Parent = TitleHolder,
         })
 
@@ -11322,9 +11341,15 @@ function Library:CreateWindow(WindowInfo)
                 IconWidth = WindowIcon.Size.X.Offset + 6
             end
 
-            local MaxWidth = math.max(0, (TitleHolder.AbsoluteSize.X / Library.DPIScale) - IconWidth - 12)
+            local MaxWidth = math.max(0, (TitleHolder.AbsoluteSize.X / Library.DPIScale) - IconWidth - 20)
             local NaturalWidth = Library:GetTextBounds(WindowTitle.Text, Library.Scheme.Font, WindowTitle.TextSize)
-            WindowTitle.Size = UDim2.new(0, math.min(NaturalWidth, MaxWidth), 1, 0)
+            local TitleWidth = math.min(NaturalWidth, MaxWidth)
+            WindowTitle.Size = UDim2.new(0, TitleWidth, 1, 0)
+
+            if WindowSubtitle.Visible then
+                local SubtitleWidth = Library:GetTextBounds(WindowSubtitle.Text, Library.Scheme.Font, WindowSubtitle.TextSize)
+                WindowSubtitle.Size = UDim2.new(0, math.max(0, math.min(SubtitleWidth, MaxWidth - TitleWidth - 8)), 1, 0)
+            end
         end
         RefreshWindowTitleSize()
 
@@ -11614,6 +11639,13 @@ function Library:CreateWindow(WindowInfo)
         RefreshWindowTitleSize()
     end
 
+    function Window:SetSubtitle(Subtitle: string?)
+        WindowInfo.Subtitle = Subtitle
+        WindowSubtitle.Text = Subtitle or ""
+        WindowSubtitle.Visible = typeof(Subtitle) == "string" and Subtitle ~= ""
+        RefreshWindowTitleSize()
+    end
+
     function Window:RefreshTitleSize()
         RefreshWindowTitleSize()
     end
@@ -11825,7 +11857,6 @@ function Library:CreateWindow(WindowInfo)
             IsCompact = Window:GetSidebarWidth() <= WindowInfo.CompactWidthActivation
         end
 
-        WindowTitle.Visible = not IsCompact
         if not WindowInfo.Icon then
             WindowIcon.Visible = IsCompact
         end
@@ -11859,16 +11890,19 @@ function Library:CreateWindow(WindowInfo)
     function Window:SetSidebarWidth(Width)
         Width = math.clamp(Width, 48, MainFrame.Size.X.Offset - WindowInfo.MinContainerWidth - 1)
 
-        DividerLine.Position = UDim2.fromOffset(Width, 0)
+        DividerLine.Position = UDim2.fromOffset(Width, 49)
 
-        TitleHolder.Size = UDim2.new(0, Width, 1, 0)
-        RightWrapper.Size = UDim2.new(1, -Width - 57 - 1, 1, -16)
         Tabs.Size = UDim2.new(0, Width, 1, -70)
         Container.Size = UDim2.new(1, -Width - 1, 1, -70)
 
         if WindowInfo.EnableCompacting then
             ApplyCompact()
         end
+
+        --// Compact sidebars keep the title readable by letting it span the sub-tab panel too
+        local TitleWidth = if IsCompact then Width + WindowInfo.SubTabWidth else Width
+        TitleHolder.Size = UDim2.new(0, TitleWidth, 1, 0)
+        RightWrapper.Size = UDim2.new(1, -TitleWidth - 57 - 1, 1, -16)
     
         RefreshWindowTitleSize()
         if not IsCompact then
