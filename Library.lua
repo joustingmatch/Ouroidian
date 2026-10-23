@@ -226,6 +226,7 @@ local Library = {
     WindowAnimationInfo = TweenInfo.new(0.35, Enum.EasingStyle.Quad, Enum.EasingDirection.Out),
     DropdownTransitionInfo = TweenInfo.new(0.18, Enum.EasingStyle.Quad, Enum.EasingDirection.Out),
     KeyPickerTransitionInfo = TweenInfo.new(0.15, Enum.EasingStyle.Quad, Enum.EasingDirection.Out),
+    SettingsPopupTransitionInfo = TweenInfo.new(0.2, Enum.EasingStyle.Quint, Enum.EasingDirection.Out),
 
     GroupboxTweenInfo = TweenInfo.new(0.2, Enum.EasingStyle.Quad, Enum.EasingDirection.Out),
     RotatingChevronTweenInfo = TweenInfo.new(0.3, Enum.EasingStyle.Back, Enum.EasingDirection.Out),
@@ -235,7 +236,8 @@ local Library = {
         TabSwitch = false,
         Groupbox = false,
         Dropdown = false,
-        KeyPicker = false
+        KeyPicker = false,
+        SettingsPopup = true
     },
 
     --// States \\--
@@ -430,6 +432,7 @@ local Templates = {
             Groupbox = false,
             Dropdown = false,
             KeyPicker = false,
+            SettingsPopup = true,
         },
 
         TabTransitionTime = 0.22,
@@ -3302,7 +3305,7 @@ function Library:AddContextMenu(
     ActiveCallback: (Active: boolean) -> ()?,
     IgnoreCornerRadius: boolean?,
     SpecificCornersOnly: ("top" | "bottom" | "no_left" | "no_top_left")?, -- stupid way of doing this
-    AnimationType: ("Dropdown" | "KeyPicker" | "none")?
+    AnimationType: ("Dropdown" | "KeyPicker" | "SettingsPopup" | "none")?
 )
     local Menu
     local HolderGui = Holder:FindFirstAncestorOfClass("ScreenGui")
@@ -6063,7 +6066,7 @@ do
             return { -8, Gear.AbsoluteSize.Y + 6 }
         end, nil, function()
             UpdateGear()
-        end, false, nil, "Dropdown")
+        end, false, nil, "SettingsPopup")
         MenuTable.Menu.ClipsDescendants = true
         Popup.Menu = MenuTable
 
