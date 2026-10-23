@@ -774,6 +774,14 @@ local function Round(Value, Rounding)
 end
 
 --// Fuzzy Search \\--
+--// Whitespace and punctuation count as word boundaries (same set as the %s%p_ pattern) \\--
+local BoundaryBytes = {}
+for Byte = 0, 127 do
+    if string.char(Byte):match("[%s%p_]") then
+        BoundaryBytes[Byte] = true
+    end
+end
+
 local function FuzzyScore(Text: string, Search: string): (boolean, number)
     if Search == "" then
         return true, 0
@@ -798,6 +806,7 @@ local function FuzzyScore(Text: string, Search: string): (boolean, number)
     end
 
     local SearchIdx = 1
+    local SearchByte = string.byte(Search, 1)
     local Score = 0
     local RunLength = 0
     local LastMatchIdx = 0
@@ -807,15 +816,16 @@ local function FuzzyScore(Text: string, Search: string): (boolean, number)
             break
         end
 
-        if Text:sub(TextIdx, TextIdx) == Search:sub(SearchIdx, SearchIdx) then
-            local PrevChar = TextIdx > 1 and Text:sub(TextIdx - 1, TextIdx - 1) or ""
-            local AtBoundary = TextIdx == 1 or PrevChar:match("[%s%p_]") ~= nil
+        if string.byte(Text, TextIdx) == SearchByte then
+            local PrevByte = TextIdx > 1 and string.byte(Text, TextIdx - 1) or nil
+            local AtBoundary = PrevByte == nil or BoundaryBytes[PrevByte] == true
 
             RunLength = (LastMatchIdx == TextIdx - 1) and (RunLength + 1) or 1
             Score += 1 + (AtBoundary and 6 or 0) + math.min(RunLength - 1, 5) * 3
 
             LastMatchIdx = TextIdx
             SearchIdx += 1
+            SearchByte = string.byte(Search, SearchIdx)
         end
     end
 
@@ -1257,13 +1267,32 @@ local function RevealSearchResult(Result)
     end)
 end
 
+local SearchUpdateMarker = nil
+
 function Library:UpdateSearch(SearchText)
     Library.SearchText = SearchText
 
-    if Library.SearchResultsHandler then
-        local Search = NormalizeSearch(SearchText:lower())
-        Library.SearchResultsHandler(if Search == "" then {} else CollectSearchResults(Search))
+    if not Library.SearchResultsHandler then
+        return
     end
+
+    local Search = NormalizeSearch(SearchText:lower())
+    if Search == "" then
+        SearchUpdateMarker = nil
+        Library.SearchResultsHandler({})
+        return
+    end
+
+    --// Coalesce fast typing into one scan once the user pauses \\--
+    local Marker = {}
+    SearchUpdateMarker = Marker
+    task.delay(0.08, function()
+        if SearchUpdateMarker ~= Marker or Library.Unloaded then
+            return
+        end
+
+        Library.SearchResultsHandler(CollectSearchResults(Search))
+    end)
 end
 
 function Library:AddToRegistry(Instance, Properties)
@@ -11599,16 +11628,15 @@ function Library:CreateWindow(WindowInfo)
             SearchResults.Size = UDim2.fromOffset(Width, Count * (ResultHeight + ResultPadding) + ResultPadding)
         end
 
-        local function ClearSearchRows()
-            for _, Child in SearchResults:GetChildren() do
-                if Child:IsA("TextButton") then
-                    for _, Descendant in Child:GetDescendants() do
-                        Library:RemoveFromRegistry(Descendant)
-                    end
-                    Library:RemoveFromRegistry(Child)
-                    Child:Destroy()
-                end
+        --// Rows are cached per element and only rebuilt when their path or text changes \--
+        local SearchRowCache = {}
+
+        local function DestroySearchRow(Row)
+            for _, Descendant in Row:GetDescendants() do
+                Library:RemoveFromRegistry(Descendant)
             end
+            Library:RemoveFromRegistry(Row)
+            Row:Destroy()
         end
 
         local function HideSearchResults()
@@ -11669,70 +11697,114 @@ function Library:CreateWindow(WindowInfo)
             return Order
         end
 
+        local function GetSearchRowKey(Result)
+            local Parts = { Result.Tab.Name }
+            for _, Step in Result.Chain do
+                table.insert(Parts, tostring(Step.Name))
+            end
+            table.insert(Parts, Result.Text)
+            return table.concat(Parts, " > ")
+        end
+
+        local function BuildSearchRow(Result, Key)
+            local Entry = { Key = Key, Result = Result }
+
+            local Row = New("TextButton", {
+                AutoButtonColor = false,
+                BackgroundColor3 = "MainColor",
+                ClipsDescendants = true,
+                Size = UDim2.new(1, 0, 0, ResultHeight),
+                Text = "",
+                Visible = false,
+                Parent = SearchResults,
+            })
+            New("UICorner", {
+                CornerRadius = UDim.new(0, WindowInfo.CornerRadius / 2),
+                Parent = Row,
+            })
+
+            local Content = New("Frame", {
+                BackgroundTransparency = 1,
+                Size = UDim2.fromScale(1, 1),
+                Parent = Row,
+            })
+            New("UIListLayout", {
+                FillDirection = Enum.FillDirection.Horizontal,
+                Padding = UDim.new(0, 6),
+                SortOrder = Enum.SortOrder.LayoutOrder,
+                VerticalAlignment = Enum.VerticalAlignment.Center,
+                Parent = Content,
+            })
+            New("UIPadding", {
+                PaddingLeft = UDim.new(0, 10),
+                PaddingRight = UDim.new(0, 10),
+                Parent = Content,
+            })
+
+            local Order = AddSegment(Content, 0, Result.Tab.Name, Result.Tab.Icon)
+            for _, Step in Result.Chain do
+                if typeof(Step.Name) == "string" and Trim(Step.Name) ~= "" then
+                    Order = AddSegment(Content, Order, Step.Name, Step.Icon)
+                end
+            end
+            AddSegment(Content, Order, Result.Text, nil, true)
+
+            Row.MouseEnter:Connect(function()
+                TweenService:Create(Row, Library.TweenInfo, {
+                    BackgroundColor3 = Library.Scheme.OutlineColor,
+                }):Play()
+            end)
+            Row.MouseLeave:Connect(function()
+                TweenService:Create(Row, Library.TweenInfo, {
+                    BackgroundColor3 = Library.Scheme.MainColor,
+                }):Play()
+            end)
+            Row.MouseButton1Click:Connect(function()
+                OpenSearchResult(Entry.Result)
+            end)
+
+            Entry.Row = Row
+            return Entry
+        end
+
         Library.SearchResultsHandler = function(Results)
             SearchResultsList = Results
-            ClearSearchRows()
             SearchResults.CanvasPosition = Vector2.zero
+
+            local Shown = {}
+            for Index, Result in Results do
+                local Target = Result.Target
+                local Key = GetSearchRowKey(Result)
+                local Entry = SearchRowCache[Target]
+
+                if Entry and Entry.Key ~= Key then
+                    DestroySearchRow(Entry.Row)
+                    Entry = nil
+                end
+                if not Entry then
+                    Entry = BuildSearchRow(Result, Key)
+                    SearchRowCache[Target] = Entry
+                end
+
+                Entry.Result = Result
+                Entry.Row.LayoutOrder = Index
+                Entry.Row.Visible = true
+                Shown[Target] = true
+            end
+
+            for Target, Entry in SearchRowCache do
+                if not Target.Parent then
+                    DestroySearchRow(Entry.Row)
+                    SearchRowCache[Target] = nil
+                elseif not Shown[Target] and Entry.Row.Visible then
+                    Entry.Row.Visible = false
+                    Entry.Row.BackgroundColor3 = Library.Scheme.MainColor
+                end
+            end
 
             if #Results == 0 then
                 HideSearchResults()
                 return
-            end
-
-            for Index, Result in Results do
-                local Row = New("TextButton", {
-                    AutoButtonColor = false,
-                    BackgroundColor3 = "MainColor",
-                    ClipsDescendants = true,
-                    LayoutOrder = Index,
-                    Size = UDim2.new(1, 0, 0, ResultHeight),
-                    Text = "",
-                    Parent = SearchResults,
-                })
-                New("UICorner", {
-                    CornerRadius = UDim.new(0, WindowInfo.CornerRadius / 2),
-                    Parent = Row,
-                })
-
-                local Content = New("Frame", {
-                    BackgroundTransparency = 1,
-                    Size = UDim2.fromScale(1, 1),
-                    Parent = Row,
-                })
-                New("UIListLayout", {
-                    FillDirection = Enum.FillDirection.Horizontal,
-                    Padding = UDim.new(0, 6),
-                    SortOrder = Enum.SortOrder.LayoutOrder,
-                    VerticalAlignment = Enum.VerticalAlignment.Center,
-                    Parent = Content,
-                })
-                New("UIPadding", {
-                    PaddingLeft = UDim.new(0, 10),
-                    PaddingRight = UDim.new(0, 10),
-                    Parent = Content,
-                })
-
-                local Order = AddSegment(Content, 0, Result.Tab.Name, Result.Tab.Icon)
-                for _, Step in Result.Chain do
-                    if typeof(Step.Name) == "string" and Trim(Step.Name) ~= "" then
-                        Order = AddSegment(Content, Order, Step.Name, Step.Icon)
-                    end
-                end
-                AddSegment(Content, Order, Result.Text, nil, true)
-
-                Row.MouseEnter:Connect(function()
-                    TweenService:Create(Row, Library.TweenInfo, {
-                        BackgroundColor3 = Library.Scheme.OutlineColor,
-                    }):Play()
-                end)
-                Row.MouseLeave:Connect(function()
-                    TweenService:Create(Row, Library.TweenInfo, {
-                        BackgroundColor3 = Library.Scheme.MainColor,
-                    }):Play()
-                end)
-                Row.MouseButton1Click:Connect(function()
-                    OpenSearchResult(Result)
-                end)
             end
 
             PlaceSearchResults()
