@@ -11917,7 +11917,7 @@ function Library:CreateWindow(WindowInfo)
             Transparency = 0.6,
             Parent = Island,
         })
-        local IslandContent = New("Frame", {
+        local IslandContent = New("CanvasGroup", {
             AnchorPoint = Vector2.new(0.5, 0.5),
             BackgroundTransparency = 1,
             Position = UDim2.fromScale(0.5, 0.5),
@@ -11959,16 +11959,127 @@ function Library:CreateWindow(WindowInfo)
             Parent = IslandContent,
         })
 
+        --// Expanded card shown while hovering, like the iOS island growing into a live activity \\--
+        local ExpandedW, ExpandedH = 300, 100
+        local IslandExpanded = New("CanvasGroup", {
+            AnchorPoint = Vector2.new(0.5, 0.5),
+            BackgroundTransparency = 1,
+            GroupTransparency = 1,
+            Position = UDim2.fromScale(0.5, 0.5),
+            Size = UDim2.fromOffset(ExpandedW, ExpandedH),
+            Visible = false,
+            ZIndex = 51,
+            Parent = Island,
+        })
+        local IslandExpandedScale = New("UIScale", {
+            Parent = IslandExpanded,
+        })
+        local ExpandedIcon = New("ImageLabel", {
+            BackgroundTransparency = 1,
+            Position = UDim2.fromOffset(16, 16),
+            Size = UDim2.fromOffset(24, 24),
+            Visible = false,
+            ZIndex = 52,
+            Parent = IslandExpanded,
+        })
+        New("UICorner", {
+            CornerRadius = UDim.new(0, 6),
+            Parent = ExpandedIcon,
+        })
+        local ExpandedTitle = New("TextLabel", {
+            BackgroundTransparency = 1,
+            Position = UDim2.fromOffset(50, 13),
+            Size = UDim2.new(1, -120, 0, 17),
+            Text = WindowInfo.Title,
+            TextColor3 = Color3.new(1, 1, 1),
+            TextSize = 15,
+            TextTruncate = Enum.TextTruncate.AtEnd,
+            TextXAlignment = Enum.TextXAlignment.Left,
+            ZIndex = 52,
+            Parent = IslandExpanded,
+        })
+        local ExpandedHint = New("TextLabel", {
+            BackgroundTransparency = 1,
+            Position = UDim2.fromOffset(50, 30),
+            Size = UDim2.new(1, -120, 0, 14),
+            Text = "Click to open \u{00B7} drag to move",
+            TextColor3 = Color3.fromRGB(150, 150, 155),
+            TextSize = 12,
+            TextXAlignment = Enum.TextXAlignment.Left,
+            ZIndex = 52,
+            Parent = IslandExpanded,
+        })
+        local ExpandedClock = New("TextLabel", {
+            AnchorPoint = Vector2.new(1, 0),
+            BackgroundTransparency = 1,
+            Position = UDim2.new(1, -16, 0, 13),
+            Size = UDim2.fromOffset(60, 17),
+            Text = "",
+            TextColor3 = Color3.new(1, 1, 1),
+            TextSize = 15,
+            TextXAlignment = Enum.TextXAlignment.Right,
+            ZIndex = 52,
+            Parent = IslandExpanded,
+        })
+        New("Frame", {
+            BackgroundColor3 = Color3.new(1, 1, 1),
+            BackgroundTransparency = 0.88,
+            BorderSizePixel = 0,
+            Position = UDim2.fromOffset(16, 54),
+            Size = UDim2.new(1, -32, 0, 1),
+            ZIndex = 52,
+            Parent = IslandExpanded,
+        })
+
+        local ExpandedStats = {}
+        for Index, Caption in { "FPS", "PING", "PLAYERS" } do
+            local Alignment = Index == 1 and Enum.TextXAlignment.Left or Enum.TextXAlignment.Center
+            local Column = New("Frame", {
+                BackgroundTransparency = 1,
+                Position = UDim2.new((Index - 1) / 3, Index == 1 and 16 or 0, 0, 62),
+                Size = UDim2.new(1 / 3, Index == 1 and -16 or 0, 0, 30),
+                ZIndex = 52,
+                Parent = IslandExpanded,
+            })
+            New("TextLabel", {
+                BackgroundTransparency = 1,
+                Size = UDim2.new(1, 0, 0, 12),
+                Text = Caption,
+                TextColor3 = Color3.fromRGB(150, 150, 155),
+                TextSize = 11,
+                TextXAlignment = Alignment,
+                ZIndex = 52,
+                Parent = Column,
+            })
+            ExpandedStats[Caption] = New("TextLabel", {
+                BackgroundTransparency = 1,
+                Position = UDim2.fromOffset(0, 13),
+                Size = UDim2.new(1, 0, 0, 17),
+                Text = "-",
+                TextColor3 = Color3.new(1, 1, 1),
+                TextSize = 15,
+                TextXAlignment = Alignment,
+                ZIndex = 52,
+                Parent = Column,
+            })
+        end
+
         SetIslandIcon = function(IconName)
             local Icon = Library:GetCustomIcon(IconName)
             IslandIcon.Visible = Icon ~= nil
+            ExpandedIcon.Visible = Icon ~= nil
             if Icon then
                 Library:ApplyLucideIcon(IslandIcon, Icon)
+                Library:ApplyLucideIcon(ExpandedIcon, Icon)
                 -- lucide icons are monochrome; tint them white to sit on the black pill
                 if typeof(IconName) == "string" and Library:GetIcon(IconName) then
                     IslandIcon.ImageColor3 = Color3.new(1, 1, 1)
+                    ExpandedIcon.ImageColor3 = Color3.new(1, 1, 1)
                 end
             end
+            local TextX = Icon and 50 or 16
+            ExpandedTitle.Position = UDim2.fromOffset(TextX, 13)
+            ExpandedHint.Position = UDim2.fromOffset(TextX, 30)
         end
         SetIslandIcon(WindowInfo.IslandIcon or WindowInfo.Icon or "sparkles")
 
@@ -11979,7 +12090,9 @@ function Library:CreateWindow(WindowInfo)
             W = { P = 0, V = 0, T = 0, K = 170, D = 13 }, -- looser so width wobbles like jelly
             H = { P = 0, V = 0, T = 0, K = 300, D = 19 },
             R = { P = 0, V = 0, T = 0, K = 200, D = 24 }, -- roundness: 0 = window corners, 1 = pill
+            E = { P = 0, V = 0, T = 0, K = 220, D = 26 }, -- expansion: 0 = compact pill, 1 = hover card
         }
+        local IslandExpandWanted = false -- hover has lingered long enough to open the card
 
         local function SetSpring(Spring, Target, Snap)
             Spring.T = Target
@@ -12015,26 +12128,55 @@ function Library:CreateWindow(WindowInfo)
                 math.clamp(Y, H / 2, math.max(H / 2, Screen.Y - H / 2))
         end
 
+        local function GetExpandedSize()
+            local PillW = GetPillSize()
+            return math.max(PillW, ExpandedW * Library.DPIScale), ExpandedH * Library.DPIScale
+        end
+
+        local function GetPillCenter()
+            local W, H = GetPillSize()
+            if IslandCenter then
+                return ClampCenter(IslandCenter.X, IslandCenter.Y, W, H)
+            end
+            return ScreenGui.AbsoluteSize.X / 2, 12 * Library.DPIScale + H / 2
+        end
+
         local function SetPillTargets(Snap)
             local W, H = GetPillSize()
-            local Scale = (IslandPressed and 0.92) or (IslandHovered and 1.06) or 1
-            local X, Y
-            if IslandCenter then
-                X, Y = ClampCenter(IslandCenter.X, IslandCenter.Y, W, H)
+            local X, Y = GetPillCenter()
+            local Expand = IslandExpandWanted and IslandHovered and not IslandPressed and not IslandDragging
+            if Expand then
+                -- grow downward from the pill's top edge, like the real island
+                local EW, EH = GetExpandedSize()
+                X, Y = ClampCenter(X, Y - H / 2 + EH / 2, EW, EH)
+                W, H = EW, EH
             else
-                X, Y = ScreenGui.AbsoluteSize.X / 2, 12 * Library.DPIScale + H / 2
+                local Scale = (IslandPressed and 0.92) or (IslandHovered and 1.06) or 1
+                W, H = W * Scale, H * Scale
             end
             SetSpring(Springs.X, X, Snap)
             SetSpring(Springs.Y, Y, Snap)
-            SetSpring(Springs.W, W * Scale)
-            SetSpring(Springs.H, H * Scale)
+            SetSpring(Springs.W, W)
+            SetSpring(Springs.H, H)
             SetSpring(Springs.R, 1)
+            SetSpring(Springs.E, Expand and 1 or 0)
+        end
+
+        local FrameRate, StatsClock = 60, 0
+        local function UpdateExpandedStats()
+            ExpandedClock.Text = os.date("%H:%M")
+            ExpandedStats.FPS.Text = tostring(math.round(FrameRate))
+            local Ok, Ping = pcall(LocalPlayer.GetNetworkPing, LocalPlayer)
+            ExpandedStats.PING.Text = Ok and string.format("%d ms", math.round(Ping * 1000)) or "-"
+            ExpandedStats.PLAYERS.Text = string.format("%d / %d", #Players:GetPlayers(), Players.MaxPlayers)
         end
 
         Library:GiveSignal(RunService.RenderStepped:Connect(function(DeltaTime)
             if not Island.Visible then
                 return
             end
+
+            FrameRate += (1 / math.max(DeltaTime, 1e-3) - FrameRate) * math.min(DeltaTime * 4, 1)
 
             -- fixed substeps keep the springs stable on low framerates
             local Steps = math.clamp(math.ceil(DeltaTime / (1 / 240)), 1, 16)
@@ -12062,8 +12204,26 @@ function Library:CreateWindow(WindowInfo)
             Island.Size = UDim2.fromOffset(W, H)
             IslandCorner.CornerRadius = UDim.new(0, WindowInfo.CornerRadius + (math.min(W, H) / 2 - WindowInfo.CornerRadius) * Round)
 
+            -- scale content against the shape the island is morphing toward so it never balloons mid-expand
+            local Expand = math.clamp(Springs.E.P, 0, 1)
             local PillW, PillH = GetPillSize()
-            IslandContentScale.Scale = Library.DPIScale * math.clamp(math.min(W / PillW, H / PillH), 0.6, 1.15)
+            local EW, EH = GetExpandedSize()
+            local ShapeW, ShapeH = PillW + (EW - PillW) * Expand, PillH + (EH - PillH) * Expand
+            local Fit = math.clamp(math.min(W / ShapeW, H / ShapeH), 0.6, 1.15)
+            IslandContentScale.Scale = Library.DPIScale * Fit
+            IslandExpandedScale.Scale = Library.DPIScale * math.min(Fit, 1) * (0.92 + 0.08 * Expand)
+
+            -- crossfade: the pill row leaves quickly, the card arrives once there's room for it
+            IslandContent.GroupTransparency = math.clamp(Expand * 2.5, 0, 1)
+            IslandExpanded.GroupTransparency = 1 - math.clamp((Expand - 0.4) / 0.6, 0, 1)
+            IslandExpanded.Visible = Expand > 0.4
+            if IslandExpanded.Visible then
+                StatsClock -= DeltaTime
+                if StatsClock <= 0 then
+                    StatsClock = 0.5
+                    UpdateExpandedStats()
+                end
+            end
         end))
 
         local FadeInfo = TweenInfo.new(0.2, Enum.EasingStyle.Quad, Enum.EasingDirection.Out)
@@ -12092,6 +12252,7 @@ function Library:CreateWindow(WindowInfo)
             end
             IslandMinimized, IslandBusy = true, true
             IslandTitle.Text = WindowInfo.Title
+            ExpandedTitle.Text = WindowInfo.Title
 
             local X, Y, W, H = GetMainRect()
             SetSpring(Springs.X, X, true)
@@ -12099,6 +12260,7 @@ function Library:CreateWindow(WindowInfo)
             SetSpring(Springs.W, W, true)
             SetSpring(Springs.H, H, true)
             SetSpring(Springs.R, 0, true)
+            SetSpring(Springs.E, 0, true)
             Island.BackgroundColor3 = MainFrame.BackgroundColor3
             Island.Visible = true
             MainFrame.Visible = false
@@ -12120,8 +12282,9 @@ function Library:CreateWindow(WindowInfo)
             if not IslandMinimized or IslandBusy then
                 return
             end
-            IslandBusy, IslandPressed, IslandHovered = true, false, false
+            IslandBusy, IslandPressed, IslandHovered, IslandExpandWanted = true, false, false, false
 
+            SetSpring(Springs.E, 0)
             FadeContent(1).Completed:Wait()
 
             local X, Y, W, H = GetMainRect()
@@ -12159,6 +12322,8 @@ function Library:CreateWindow(WindowInfo)
             IslandTitle.TextTransparency = 1
             IslandIcon.ImageTransparency = 1
             IslandMinimized, IslandBusy, IslandDragging, IslandPressed, IslandHovered = false, false, false, false, false
+            IslandExpandWanted = false
+            SetSpring(Springs.E, 0, true)
         end
 
         local function RefreshPill()
@@ -12167,13 +12332,25 @@ function Library:CreateWindow(WindowInfo)
             end
         end
 
+        -- a short linger before opening keeps the card from flickering when the cursor just passes over
+        local HoverToken = 0
         Island.MouseEnter:Connect(function()
             IslandHovered = true
+            HoverToken += 1
+            local Token = HoverToken
             TweenService:Create(IslandStroke, FadeInfo, { Transparency = 0.2 }):Play()
             RefreshPill()
+            task.delay(0.15, function()
+                if Token == HoverToken and IslandHovered and IslandMinimized then
+                    IslandExpandWanted = true
+                    StatsClock = 0
+                    RefreshPill()
+                end
+            end)
         end)
         Island.MouseLeave:Connect(function()
-            IslandHovered = false
+            IslandHovered, IslandExpandWanted = false, false
+            HoverToken += 1
             TweenService:Create(IslandStroke, FadeInfo, { Transparency = 0.6 }):Play()
             RefreshPill()
         end)
@@ -12186,7 +12363,7 @@ function Library:CreateWindow(WindowInfo)
             end
             IslandPressed, IslandDragging = true, false
             DragStartInput = Input.Position
-            DragStartCenter = Vector2.new(Springs.X.T, Springs.Y.T)
+            DragStartCenter = Vector2.new(GetPillCenter())
             RefreshPill()
         end)
 
