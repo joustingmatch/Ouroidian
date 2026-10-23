@@ -12697,22 +12697,29 @@ function Library:CreateWindow(WindowInfo)
                 Size = UDim2.new(1, -TabButtonsStyle.Padding * 2, 0, 1),
                 Parent = BottomTabs,
             })
+            --// Buttons go in their own frame so the list layout doesn't stack the divider like a button
+            local BottomTabsList = New("Frame", {
+                BackgroundTransparency = 1,
+                Name = "List",
+                Size = UDim2.fromScale(1, 1),
+                Parent = BottomTabs,
+            })
             New("UIListLayout", {
                 Padding = UDim.new(0, TabButtonsStyle.Gap),
                 VerticalAlignment = Enum.VerticalAlignment.Bottom,
-                Parent = BottomTabs,
+                Parent = BottomTabsList,
             })
             New("UIPadding", {
                 PaddingBottom = UDim.new(0, TabButtonsStyle.Padding),
                 PaddingLeft = UDim.new(0, TabButtonsStyle.Padding),
                 PaddingRight = UDim.new(0, TabButtonsStyle.Padding),
                 PaddingTop = UDim.new(0, TabButtonsStyle.Padding),
-                Parent = BottomTabs,
+                Parent = BottomTabsList,
             })
 
             Tabs.Size = UDim2.new(0, Tabs.Size.X.Offset, 1, -70 - BottomTabsHeight)
         end
-        Tab.Button.Parent = BottomTabs
+        Tab.Button.Parent = BottomTabs.List
 
         --// Full page: the regular left/right columns are not used \\--
         for _, Side in Tab.Sides do
