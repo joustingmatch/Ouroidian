@@ -31,6 +31,16 @@ local Window = Library:CreateWindow({
 	Icon = 95816097006870,
 	NotifySide = "Right",
 
+	-- Sidebar tab button look; Indicator adds an accent bar beside the active tab
+	TabButtonsStyle = {
+		Gap = 4,
+		Padding = 6,
+		CornerRadius = 6,
+		Indicator = true,
+		IndicatorWidth = 2,
+		IndicatorHeight = 26,
+	},
+
 	-- Other useful options: Center, AutoShow, Resizable, Size, Position,
 	-- MobileButtonsSide ("Left" / "Right"), AlwaysOnTop, DisableSearch
 })
@@ -110,12 +120,34 @@ AimSettings:SetupDependencies({
 
 AimGroup:AddDivider("Trigger")
 
-AimGroup:AddToggle("TriggerBot", {
+local TriggerBot = AimGroup:AddToggle("TriggerBot", {
 	Text = "Trigger Bot",
 	Tooltip = "Fires automatically when your crosshair is on a target",
 	Risky = true, -- Highlights the text in the scheme's red
 	Default = false,
 })
+
+-- AddSettingsPopup puts a gear beside the toggle; its config lives in a popup that
+-- takes any groupbox element (sliders, dropdowns, toggles, ...)
+local TriggerSettings = TriggerBot:AddSettingsPopup({ Width = 220, Tooltip = "Trigger Bot settings" })
+
+TriggerSettings:AddSlider("TriggerHitChance", {
+	Text = "Hit Chance",
+	Default = 100,
+	Min = 0,
+	Max = 100,
+	Rounding = 0,
+	Suffix = "%",
+})
+
+TriggerSettings:AddDropdown("TriggerWeapons", {
+	Text = "Weapons",
+	Values = { "Rifles", "Pistols", "Snipers" },
+	Default = { "Rifles" },
+	Multi = true,
+})
+
+TriggerSettings:AddToggle("TriggerScopedOnly", { Text = "Only When Scoped", Default = false })
 
 AimGroup:AddSlider("TriggerDelay", {
 	Text = "Reaction Delay",

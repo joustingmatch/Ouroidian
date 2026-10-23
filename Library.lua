@@ -591,6 +591,11 @@ local Templates = {
     },
 
     --// Addons \\-
+    SettingsPopup = {
+        Width = 220,
+        Tooltip = nil,
+    },
+
     KeyPicker = {
         Text = "KeyPicker",
 
@@ -3424,10 +3429,19 @@ function Library:AddContextMenu(
     function Table:Open()
         if CurrentMenu == Table then
             return
-        elseif CurrentMenu then
-            CurrentMenu:Close()
         end
 
+        -- Keep menus that contain this holder open (nested menus, e.g. a dropdown inside a settings popup) --
+        local ParentMenu = CurrentMenu
+        while ParentMenu and not Holder:IsDescendantOf(ParentMenu.Menu) do
+            ParentMenu:Close()
+            if CurrentMenu == ParentMenu then
+                break
+            end
+            ParentMenu = CurrentMenu
+        end
+
+        Table.ParentMenu = ParentMenu
         CurrentMenu = Table
         Table.Active = true
         Menu.ZIndex = 1
@@ -3510,6 +3524,7 @@ function Library:AddContextMenu(
             end
 
             local HolderAllowed = Library:IsInsideFrame(Library.WindowContainer, Holder)
+                or (Table.ParentMenu ~= nil and Library:IsInsideFrame(Table.ParentMenu.Menu, Holder))
             if not HolderAllowed then
                 for _, Surface in Library.DraggableElements do
                     if not (Surface and Library:IsInsideFrame(Surface, Holder)) then
@@ -3528,6 +3543,19 @@ function Library:AddContextMenu(
     end
 
     function Table:Close()
+        if not Table.Active then
+            return
+        end
+
+        -- Close any menus nested inside this one first --
+        while CurrentMenu and CurrentMenu ~= Table do
+            local Child = CurrentMenu
+            Child:Close()
+            if CurrentMenu == Child then
+                break
+            end
+        end
+
         if CurrentMenu ~= Table then
             return
         end
@@ -3538,7 +3566,8 @@ function Library:AddContextMenu(
         end
 
         Table.Active = false
-        CurrentMenu = nil
+        CurrentMenu = Table.ParentMenu
+        Table.ParentMenu = nil
 
         if typeof(ActiveCallback) == "function" then
             Library:SafeCallback(ActiveCallback, false)
@@ -3605,7 +3634,7 @@ function Library:AddContextMenu(
             end
         end
 
-        if CurrentMenu == Table then
+        if Table.Active then
             Table:Close()
         end
 
@@ -3636,14 +3665,18 @@ Library:GiveSignal(UserInputService.InputBegan:Connect(function(Input: InputObje
     if IsClickInput(Input, true) then
         local Location = Input.Position
 
-        if
+        while
             CurrentMenu
             and not (
                 Library:MouseIsOverFrame(CurrentMenu.Menu, Location)
                 or Library:MouseIsOverFrame(CurrentMenu.Holder, Location)
             )
-        then
-            CurrentMenu:Close()
+        do
+            local Menu = CurrentMenu
+            Menu:Close()
+            if CurrentMenu == Menu then
+                break
+            end
         end
     end
 end))
@@ -3731,11 +3764,17 @@ function Library:AddTooltip(InfoStr: string, DisabledInfoStr: string, HoverInsta
         Signals = {},
     }
 
+    local function IsBlockedByMenu()
+        return CurrentMenu ~= nil
+            and Library:MouseIsOverFrame(CurrentMenu.Menu, Mouse)
+            and not HoverInstance:IsDescendantOf(CurrentMenu.Menu)
+    end
+
     local function DoHover()
         if
             CurrentHoverInstance == HoverInstance
             or Library.ActiveDialog
-            or (CurrentMenu and Library:MouseIsOverFrame(CurrentMenu.Menu, Mouse))
+            or IsBlockedByMenu()
             or (TooltipTable.Disabled and typeof(DisabledInfoStr) ~= "string")
             or (not TooltipTable.Disabled and typeof(InfoStr) ~= "string")
         then
@@ -3762,7 +3801,7 @@ function Library:AddTooltip(InfoStr: string, DisabledInfoStr: string, HoverInsta
             (Library.Toggled or Library.ActiveLoading)
             and not Library.ActiveDialog
             and Library:MouseIsOverFrame(HoverInstance, Mouse)
-            and not (CurrentMenu and Library:MouseIsOverFrame(CurrentMenu.Menu, Mouse))
+            and not IsBlockedByMenu()
         do
             TooltipLabel.Position = UDim2.fromOffset(
                 Mouse.X + 14,
@@ -3821,6 +3860,7 @@ function Library:OnUnload(Callback)
     table.insert(Library.UnloadSignals, Callback)
 end
 
+local BaseGroupbox -- forward declared; settings popups act as groupboxes
 local BaseAddons = {}
 do
     local Funcs = {}
@@ -5964,13 +6004,202 @@ do
         return self
     end
 
+    function Funcs:AddSettingsPopup(Info)
+        if self.Destroyed then return nil end
+
+        Info = Library:Validate(Info or {}, Templates.SettingsPopup)
+
+        local ParentObj = self
+        local ParentLabel = ParentObj.TextLabel
+        assert(ParentLabel, "SettingsPopup can only be added to Toggles, Checkboxes and Labels.")
+
+        local Groupbox = ParentObj.Parent
+
+        local Gear = New("ImageButton", {
+            AutoButtonColor = false,
+            BackgroundTransparency = 1,
+            ImageColor3 = "FontColor",
+            ImageTransparency = 0.5,
+            LayoutOrder = -1,
+            Size = UDim2.fromOffset(16, 16),
+            Parent = ParentLabel,
+        })
+        if SettingsIcon then
+            Library:ApplyLucideIcon(Gear, SettingsIcon)
+        end
+
+        local Popup = {
+            Connections = {},
+            Destroyed = false,
+
+            Width = Info.Width,
+            Height = 0,
+
+            Tooltip = Info.Tooltip,
+            TooltipTable = nil,
+
+            Holder = Gear,
+            Container = nil,
+            Menu = nil,
+
+            Tab = Groupbox and Groupbox.Tab,
+            Visible = true,
+            Elements = {},
+            DependencyBoxes = {},
+
+            Type = "SettingsPopup",
+            Parent = ParentObj,
+        }
+
+        local Hovering = false
+        local function UpdateGear()
+            local Lit = Popup.Menu and Popup.Menu.Active or Hovering
+            Gear.ImageTransparency = if ParentObj.Disabled then 0.8 elseif Lit then 0 else 0.5
+        end
+
+        local MenuTable = Library:AddContextMenu(Gear, function()
+            return UDim2.fromOffset(Popup.Width, Popup.Height)
+        end, function()
+            return { -8, Gear.AbsoluteSize.Y + 6 }
+        end, nil, function()
+            UpdateGear()
+        end, false, nil, "Dropdown")
+        MenuTable.Menu.ClipsDescendants = true
+        Popup.Menu = MenuTable
+
+        local Container = New("Frame", {
+            BackgroundTransparency = 1,
+            Size = UDim2.fromScale(1, 1),
+            Parent = MenuTable.Menu,
+        })
+        New("UIPadding", {
+            PaddingBottom = UDim.new(0, 8),
+            PaddingLeft = UDim.new(0, 8),
+            PaddingRight = UDim.new(0, 8),
+            PaddingTop = UDim.new(0, 8),
+            Parent = Container,
+        })
+        local List = New("UIListLayout", {
+            Padding = UDim.new(0, 8),
+            Parent = Container,
+        })
+        Popup.Container = Container
+
+        function Popup:Resize()
+            Popup.Height = math.ceil(List.AbsoluteContentSize.Y / Library.DPIScale) + 16
+
+            if MenuTable.Active and not MenuTable.OpenCloseTween then
+                MenuTable.Menu.Size = UDim2.fromOffset(Popup.Width, Popup.Height)
+            end
+        end
+
+        function Popup:Update()
+            if ParentObj.Disabled and MenuTable.Active then
+                MenuTable:Close()
+            end
+
+            Gear.Active = not ParentObj.Disabled
+            UpdateGear()
+        end
+
+        function Popup:Open()
+            if ParentObj.Disabled then
+                return
+            end
+
+            Popup:Resize()
+            MenuTable:Open()
+        end
+
+        function Popup:Close()
+            MenuTable:Close()
+        end
+
+        function Popup:SetWidth(Width: number)
+            Popup.Width = Width
+            Popup:Resize()
+        end
+
+        table.insert(Popup.Connections, List:GetPropertyChangedSignal("AbsoluteContentSize"):Connect(function()
+            Popup:Resize()
+        end))
+
+        table.insert(Popup.Connections, Gear.MouseEnter:Connect(function()
+            Hovering = true
+            UpdateGear()
+        end))
+        table.insert(Popup.Connections, Gear.MouseLeave:Connect(function()
+            Hovering = false
+            UpdateGear()
+        end))
+
+        table.insert(Popup.Connections, Gear.MouseButton1Click:Connect(function()
+            if MenuTable.Active then
+                Popup:Close()
+            else
+                Popup:Open()
+            end
+        end))
+
+        if typeof(Popup.Tooltip) == "string" then
+            Popup.TooltipTable = Library:AddTooltip(Popup.Tooltip, nil, Gear)
+        end
+
+        setmetatable(Popup, BaseGroupbox)
+
+        if not ParentObj.Addons then
+            ParentObj.Addons = {}
+        end
+        table.insert(ParentObj.Addons, Popup)
+
+        Popup:Update()
+        Popup:Resize()
+
+        function Popup:Destroy()
+            Popup.Destroyed = true
+
+            for _, Connection in Popup.Connections do
+                Connection:Disconnect()
+            end
+
+            for Index = #Popup.Elements, 1, -1 do
+                local Element = Popup.Elements[Index]
+                if Element and Element.Destroy then
+                    Element:Destroy()
+                end
+            end
+
+            for _, SubDepbox in Popup.DependencyBoxes do
+                if SubDepbox.Destroy then
+                    SubDepbox:Destroy()
+                end
+            end
+
+            if Popup.TooltipTable then
+                Popup.TooltipTable:Destroy()
+            end
+
+            MenuTable:Destroy()
+            Gear:Destroy()
+
+            if ParentObj.Addons then
+                local AddonIdx = table.find(ParentObj.Addons, Popup)
+                if AddonIdx then
+                    table.remove(ParentObj.Addons, AddonIdx)
+                end
+            end
+        end
+
+        return Popup
+    end
+
     BaseAddons.__index = Funcs
     BaseAddons.__namecall = function(_, Key, ...)
         return Funcs[Key](...)
     end
 end
 
-local BaseGroupbox = {}
+BaseGroupbox = {}
 do
     local Funcs = {}
 

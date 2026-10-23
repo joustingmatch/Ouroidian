@@ -226,6 +226,11 @@ export type UIPassthroughInfo = {
     Visible: boolean?,
 }
 
+export type SettingsPopupInfo = {
+    Width: number?,
+    Tooltip: string?,
+}
+
 export type KeyPickerInfo = {
     Text: string,
     Default: string?,
@@ -356,6 +361,7 @@ export type Label = {
     -- From BaseAddons
     AddKeyPicker: (self: Label, Idx: string, Info: KeyPickerInfo) -> Label,
     AddColorPicker: (self: Label, Idx: string, Info: ColorPickerInfo) -> Label,
+    AddSettingsPopup: (self: Label, Info: SettingsPopupInfo?) -> SettingsPopup,
     Destroy: (self: Label) -> (),
 }
 
@@ -444,6 +450,7 @@ export type Toggle = {
     -- From BaseAddons
     AddKeyPicker: (self: Toggle, Idx: string, Info: KeyPickerInfo) -> Toggle,
     AddColorPicker: (self: Toggle, Idx: string, Info: ColorPickerInfo) -> Toggle,
+    AddSettingsPopup: (self: Toggle, Info: SettingsPopupInfo?) -> SettingsPopup,
     Destroy: (self: Toggle) -> (),
 }
 
@@ -705,6 +712,24 @@ export type DependencyBox = BaseGroupbox & {
     Resize: (self: DependencyBox) -> (),
     Update: (self: DependencyBox, CancelSearch: boolean?) -> (),
     SetupDependencies: (self: DependencyBox, Dependencies: { { Element } }) -> (),
+}
+
+-- Gear-button popup attached to a Toggle/Checkbox/Label; holds its own elements like a groupbox
+export type SettingsPopup = BaseGroupbox & {
+    Width: number,
+    Height: number,
+    Holder: ImageButton,
+    Container: Frame,
+    Elements: { [number]: Element },
+    DependencyBoxes: { [number]: DependencyBox },
+    Type: "SettingsPopup",
+
+    Resize: (self: SettingsPopup) -> (),
+    Update: (self: SettingsPopup) -> (),
+    Open: (self: SettingsPopup) -> (),
+    Close: (self: SettingsPopup) -> (),
+    SetWidth: (self: SettingsPopup, Width: number) -> (),
+    Destroy: (self: SettingsPopup) -> (),
 }
 
 export type DependencyGroupbox = BaseGroupbox & {
