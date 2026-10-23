@@ -10908,6 +10908,8 @@ function Library:CreateWindow(WindowInfo)
     local CurrentTabLabel
     local CurrentTabDescription
     local ResizeButton
+    local IslandMinimized = false
+    local DismissIsland
     local Tabs
     local Container
     local BackgroundImage
@@ -11484,17 +11486,185 @@ function Library:CreateWindow(WindowInfo)
             Library:ApplyLucideIcon(SearchIconImage, SearchIcon)
         end
 
-        if MoveIcon then
-            local MoveIconImage = New("ImageLabel", {
-                AnchorPoint = Vector2.new(1, 0.5),
-                ImageColor3 = "OutlineColor",
-                Position = UDim2.new(1, -10, 0.5, 0),
-                Size = UDim2.fromOffset(28, 28),
-                SizeConstraint = Enum.SizeConstraint.RelativeYY,
-                Parent = TopBar,
-            })
-            Library:ApplyLucideIcon(MoveIconImage, MoveIcon)
+        --// Minimize (Dynamic Island) \\--
+        local MinimizeButton = New("ImageButton", {
+            AnchorPoint = Vector2.new(1, 0.5),
+            BackgroundTransparency = 1,
+            ImageColor3 = "OutlineColor",
+            Position = UDim2.new(1, -10, 0.5, 0),
+            Size = UDim2.fromOffset(24, 24),
+            Parent = TopBar,
+        })
+        local MinimizeIcon = Library:GetIcon("minimize-2")
+        if MinimizeIcon then
+            Library:ApplyLucideIcon(MinimizeButton, MinimizeIcon)
         end
+        MinimizeButton.MouseEnter:Connect(function()
+            TweenService:Create(MinimizeButton, Library.TweenInfo, {
+                ImageColor3 = Library.Scheme.FontColor,
+            }):Play()
+        end)
+        MinimizeButton.MouseLeave:Connect(function()
+            TweenService:Create(MinimizeButton, Library.TweenInfo, {
+                ImageColor3 = Library.Scheme.OutlineColor,
+            }):Play()
+        end)
+
+        local IslandBusy = false
+        local Island = New("TextButton", {
+            AutoButtonColor = false,
+            BackgroundColor3 = Color3.new(0, 0, 0),
+            ClipsDescendants = true,
+            Name = "DynamicIsland",
+            Text = "",
+            Visible = false,
+            ZIndex = 50,
+            Parent = ScreenGui,
+        })
+        local IslandCorner = New("UICorner", {
+            CornerRadius = UDim.new(0, WindowInfo.CornerRadius),
+            Parent = Island,
+        })
+        local IslandStroke = New("UIStroke", {
+            Color = "OutlineColor",
+            Transparency = 0.6,
+            Parent = Island,
+        })
+        local IslandContent = New("Frame", {
+            BackgroundTransparency = 1,
+            Size = UDim2.fromScale(1, 1),
+            ZIndex = 51,
+            Parent = Island,
+        })
+        New("UIListLayout", {
+            FillDirection = Enum.FillDirection.Horizontal,
+            HorizontalAlignment = Enum.HorizontalAlignment.Center,
+            VerticalAlignment = Enum.VerticalAlignment.Center,
+            Padding = UDim.new(0, 8),
+            Parent = IslandContent,
+        })
+        local IslandDot = New("Frame", {
+            BackgroundColor3 = "AccentColor",
+            BackgroundTransparency = 1,
+            Size = UDim2.fromOffset(8, 8),
+            ZIndex = 52,
+            Parent = IslandContent,
+        })
+        New("UICorner", {
+            CornerRadius = UDim.new(1, 0),
+            Parent = IslandDot,
+        })
+        local IslandTitle = New("TextLabel", {
+            AutomaticSize = Enum.AutomaticSize.X,
+            BackgroundTransparency = 1,
+            Size = UDim2.fromScale(0, 1),
+            Text = WindowInfo.Title,
+            TextColor3 = Color3.new(1, 1, 1),
+            TextSize = 14,
+            TextTransparency = 1,
+            ZIndex = 52,
+            Parent = IslandContent,
+        })
+
+        local function GetMainRect()
+            local Offset = ScreenGui.AbsolutePosition
+            return UDim2.fromOffset(MainFrame.AbsolutePosition.X - Offset.X, MainFrame.AbsolutePosition.Y - Offset.Y),
+                UDim2.fromOffset(MainFrame.AbsoluteSize.X, MainFrame.AbsoluteSize.Y)
+        end
+
+        local function GetIslandRect()
+            local Scale = Library.DPIScale
+            local Width = math.clamp(IslandTitle.TextBounds.X + 64, 140, 320) * Scale
+            local Height = 36 * Scale
+            local ScreenWidth = ScreenGui.AbsoluteSize.X
+            return UDim2.fromOffset((ScreenWidth - Width) / 2, 12 * Scale), UDim2.fromOffset(Width, Height), Height
+        end
+
+        local ExpandInfo = TweenInfo.new(0.45, Enum.EasingStyle.Back, Enum.EasingDirection.Out, 0, false, 0)
+        local ShrinkInfo = TweenInfo.new(0.4, Enum.EasingStyle.Quint, Enum.EasingDirection.InOut)
+        local FadeInfo = TweenInfo.new(0.2, Enum.EasingStyle.Quad, Enum.EasingDirection.Out)
+
+        local function MinimizeToIsland()
+            if IslandMinimized or IslandBusy then
+                return
+            end
+            IslandMinimized, IslandBusy = true, true
+            IslandTitle.Text = WindowInfo.Title
+
+            local StartPos, StartSize = GetMainRect()
+            local EndPos, EndSize, Height = GetIslandRect()
+            Island.Position, Island.Size = StartPos, StartSize
+            Island.BackgroundColor3 = MainFrame.BackgroundColor3
+            IslandCorner.CornerRadius = UDim.new(0, WindowInfo.CornerRadius)
+            Island.Visible = true
+            MainFrame.Visible = false
+            TooltipLabel.Visible = false
+
+            TweenService:Create(Island, ShrinkInfo, {
+                Position = EndPos,
+                Size = EndSize,
+                BackgroundColor3 = Color3.new(0, 0, 0),
+            }):Play()
+            local CornerTween = TweenService:Create(IslandCorner, ShrinkInfo, {
+                CornerRadius = UDim.new(0, Height / 2),
+            })
+            CornerTween:Play()
+            CornerTween.Completed:Wait()
+
+            TweenService:Create(IslandTitle, FadeInfo, { TextTransparency = 0 }):Play()
+            TweenService:Create(IslandDot, FadeInfo, { BackgroundTransparency = 0 }):Play()
+            IslandBusy = false
+        end
+
+        local function RestoreFromIsland()
+            if not IslandMinimized or IslandBusy then
+                return
+            end
+            IslandBusy = true
+
+            TweenService:Create(IslandTitle, FadeInfo, { TextTransparency = 1 }):Play()
+            local DotTween = TweenService:Create(IslandDot, FadeInfo, { BackgroundTransparency = 1 })
+            DotTween:Play()
+            DotTween.Completed:Wait()
+
+            local EndPos, EndSize = GetMainRect()
+            TweenService:Create(Island, ExpandInfo, {
+                Position = EndPos,
+                Size = EndSize,
+                BackgroundColor3 = MainFrame.BackgroundColor3,
+            }):Play()
+            local CornerTween = TweenService:Create(IslandCorner, ExpandInfo, {
+                CornerRadius = UDim.new(0, WindowInfo.CornerRadius),
+            })
+            CornerTween:Play()
+            CornerTween.Completed:Wait()
+
+            MainFrame.Visible = Library.Toggled
+            Island.Visible = false
+            IslandMinimized, IslandBusy = false, false
+        end
+
+        DismissIsland = function()
+            Island.Visible = false
+            IslandTitle.TextTransparency = 1
+            IslandDot.BackgroundTransparency = 1
+            IslandMinimized, IslandBusy = false, false
+        end
+
+        Island.MouseEnter:Connect(function()
+            if IslandMinimized and not IslandBusy then
+                TweenService:Create(IslandStroke, FadeInfo, { Transparency = 0.2 }):Play()
+            end
+        end)
+        Island.MouseLeave:Connect(function()
+            TweenService:Create(IslandStroke, FadeInfo, { Transparency = 0.6 }):Play()
+        end)
+        MinimizeButton.MouseButton1Click:Connect(function()
+            task.spawn(MinimizeToIsland)
+        end)
+        Island.MouseButton1Click:Connect(function()
+            task.spawn(RestoreFromIsland)
+        end)
 
         --// Bottom Bar \\--
         local BottomClip = New("Frame", {
@@ -14150,6 +14320,10 @@ function Library:CreateWindow(WindowInfo)
             Library.Toggled = Value
         else
             Library.Toggled = not Library.Toggled
+        end
+
+        if IslandMinimized and DismissIsland then
+            DismissIsland()
         end
 
         if Library.Animations and Library.Animations.ToggleWindow == true then
