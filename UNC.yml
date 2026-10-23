@@ -24,6 +24,12 @@ globals:
     args:
       - type: any
     must_use: true
+  request:
+    args:
+      - type: table
+  http_request:
+    args:
+      - type: table
   getgenv:
     args: []
     must_use: true

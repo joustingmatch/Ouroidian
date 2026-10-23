@@ -15,6 +15,7 @@ local getgenv = getgenv or function()
     return shared
 end
 local setclipboard = setclipboard or nil
+local request = request or http_request or nil
 local protectgui = protectgui or (syn and syn.protect_gui) or function() end
 local gethui = gethui or function()
     return CoreGui
@@ -60,6 +61,14 @@ local CustomImageManagerAssets = {
         RobloxId = 97682394690683,
         Path = "Obsidian/assets/CheckIcon.png",
         URL = BaseURL .. "assets/CheckIcon.png",
+
+        Id = nil,
+    },
+
+    DiscordIcon = {
+        RobloxId = 0,
+        Path = "Obsidian/assets/DiscordIcon.png",
+        URL = BaseURL .. "assets/DiscordIcon.png",
 
         Id = nil,
     },
@@ -12601,6 +12610,10 @@ function Library:CreateWindow(WindowInfo)
         end
     end
 
+    --// Bottom-pinned sidebar buttons (e.g. the Discord tab) live here, below the scrolling tab list
+    local BottomTabs
+    local BottomTabsHeight = 0
+
     function Window:IsSidebarCompacted()
         return IsCompact
     end
@@ -12618,7 +12631,10 @@ function Library:CreateWindow(WindowInfo)
 
         DividerLine.Position = UDim2.fromOffset(Width, 49)
 
-        Tabs.Size = UDim2.new(0, Width, 1, -70)
+        Tabs.Size = UDim2.new(0, Width, 1, -70 - BottomTabsHeight)
+        if BottomTabs then
+            BottomTabs.Size = UDim2.fromOffset(Width, BottomTabsHeight)
+        end
         Container.Size = UDim2.new(1, -Width - 1, 1, -70)
 
         if WindowInfo.EnableCompacting then
@@ -12635,6 +12651,394 @@ function Library:CreateWindow(WindowInfo)
         if not IsCompact then
             LastExpandedWidth = Width
         end
+    end
+
+    function Window:AddDiscordTab(Info)
+        Info = typeof(Info) == "table" and Info or { Invite = Info }
+
+        local DiscordColor = Info.Color or Color3.fromRGB(88, 101, 242)
+        local InviteCode = tostring(Info.Invite or "")
+            :gsub("^https?://", "")
+            :gsub("^discord%.gg/", "")
+            :gsub("^discord%.com/invite/", "")
+            :gsub("/$", "")
+        local InviteLink = "https://discord.gg/" .. InviteCode
+        local Perks = Info.Perks
+            or {
+                "Get notified the moment new updates drop",
+                "Suggest features and report bugs directly",
+                "Chat with the community and get support",
+            }
+
+        local Icon = if getcustomasset then CustomImageManager.GetAsset("DiscordIcon") else "message-circle"
+
+        local Tab = Window:AddTab({
+            Name = Info.Name or "Discord",
+            Icon = Info.Icon or Icon,
+            Description = Info.Description or "Join the community",
+            Tooltip = Info.Tooltip,
+            Order = 1e6,
+        })
+
+        --// Pin the button to the bottom of the sidebar \\--
+        if not BottomTabs then
+            BottomTabsHeight = 40 + TabButtonsStyle.Padding * 2
+
+            BottomTabs = New("Frame", {
+                AnchorPoint = Vector2.new(0, 1),
+                BackgroundColor3 = "BackgroundColor",
+                Position = UDim2.new(0, 0, 1, -21),
+                Size = UDim2.fromOffset(Tabs.Size.X.Offset, BottomTabsHeight),
+                Parent = MainFrame,
+            })
+            New("Frame", {
+                BackgroundColor3 = "OutlineColor",
+                Position = UDim2.fromOffset(TabButtonsStyle.Padding, 0),
+                Size = UDim2.new(1, -TabButtonsStyle.Padding * 2, 0, 1),
+                Parent = BottomTabs,
+            })
+            New("UIListLayout", {
+                Padding = UDim.new(0, TabButtonsStyle.Gap),
+                VerticalAlignment = Enum.VerticalAlignment.Bottom,
+                Parent = BottomTabs,
+            })
+            New("UIPadding", {
+                PaddingBottom = UDim.new(0, TabButtonsStyle.Padding),
+                PaddingLeft = UDim.new(0, TabButtonsStyle.Padding),
+                PaddingRight = UDim.new(0, TabButtonsStyle.Padding),
+                PaddingTop = UDim.new(0, TabButtonsStyle.Padding),
+                Parent = BottomTabs,
+            })
+
+            Tabs.Size = UDim2.new(0, Tabs.Size.X.Offset, 1, -70 - BottomTabsHeight)
+        end
+        Tab.Button.Parent = BottomTabs
+
+        --// Full page: the regular left/right columns are not used \\--
+        for _, Side in Tab.Sides do
+            Side.Visible = false
+        end
+
+        local Page = New("ScrollingFrame", {
+            AutomaticCanvasSize = Enum.AutomaticSize.Y,
+            BackgroundTransparency = 1,
+            CanvasSize = UDim2.fromScale(0, 0),
+            ScrollBarImageTransparency = 1,
+            ScrollBarThickness = 0,
+            Size = UDim2.fromScale(1, 1),
+            Parent = Tab.Container,
+        })
+        New("UIListLayout", {
+            HorizontalAlignment = Enum.HorizontalAlignment.Center,
+            Padding = UDim.new(0, 10),
+            SortOrder = Enum.SortOrder.LayoutOrder,
+            Parent = Page,
+        })
+        New("UIPadding", {
+            PaddingBottom = UDim.new(0, 12),
+            PaddingLeft = UDim.new(0, 6),
+            PaddingRight = UDim.new(0, 6),
+            PaddingTop = UDim.new(0, 12),
+            Parent = Page,
+        })
+
+        local function Card(Order, Height)
+            local Frame = New("Frame", {
+                AutomaticSize = if Height then Enum.AutomaticSize.None else Enum.AutomaticSize.Y,
+                BackgroundColor3 = "MainColor",
+                LayoutOrder = Order,
+                Size = UDim2.new(1, 0, 0, Height or 0),
+                Parent = Page,
+            })
+            New("UICorner", {
+                CornerRadius = UDim.new(0, WindowInfo.CornerRadius),
+                Parent = Frame,
+            })
+            Library:AddOutline(Frame)
+            return Frame
+        end
+
+        --// Hero \\--
+        local Hero = Card(1, 150)
+        Hero.ClipsDescendants = true
+        local HeroBanner = New("Frame", {
+            BackgroundColor3 = DiscordColor,
+            Size = UDim2.new(1, 0, 0, 64),
+            Parent = Hero,
+        })
+        New("UICorner", {
+            CornerRadius = UDim.new(0, WindowInfo.CornerRadius),
+            Parent = HeroBanner,
+        })
+        New("UIGradient", {
+            Color = ColorSequence.new(DiscordColor, DiscordColor:Lerp(Color3.new(0, 0, 0), 0.45)),
+            Rotation = 20,
+            Parent = HeroBanner,
+        })
+
+        local Avatar = New("Frame", {
+            BackgroundColor3 = DiscordColor,
+            Position = UDim2.fromOffset(16, 30),
+            Size = UDim2.fromOffset(68, 68),
+            Parent = Hero,
+        })
+        New("UICorner", {
+            CornerRadius = UDim.new(1, 0),
+            Parent = Avatar,
+        })
+        New("UIStroke", {
+            Color = "MainColor",
+            Thickness = 4,
+            Parent = Avatar,
+        })
+        local AvatarIcon = New("ImageLabel", {
+            AnchorPoint = Vector2.new(0.5, 0.5),
+            BackgroundTransparency = 1,
+            ImageColor3 = Color3.new(1, 1, 1),
+            Position = UDim2.fromScale(0.5, 0.5),
+            ScaleType = Enum.ScaleType.Fit,
+            Size = UDim2.fromScale(0.6, 0.6),
+            Parent = Avatar,
+        })
+        local AvatarIconData = Library:GetCustomIcon(Icon)
+        if AvatarIconData then
+            Library:ApplyLucideIcon(AvatarIcon, AvatarIconData)
+        end
+        AvatarIcon.ImageColor3 = Color3.new(1, 1, 1)
+
+        local ServerName = New("TextLabel", {
+            BackgroundTransparency = 1,
+            Position = UDim2.fromOffset(96, 72),
+            Size = UDim2.new(1, -112, 0, 22),
+            Text = Info.Title or "Join our Discord",
+            TextSize = 20,
+            TextTruncate = Enum.TextTruncate.AtEnd,
+            TextXAlignment = Enum.TextXAlignment.Left,
+            Parent = Hero,
+        })
+
+        local Stats = New("TextLabel", {
+            BackgroundTransparency = 1,
+            Position = UDim2.fromOffset(96, 96),
+            RichText = true,
+            Size = UDim2.new(1, -112, 0, 16),
+            Text = "discord.gg/" .. InviteCode,
+            TextSize = 14,
+            TextTransparency = 0.4,
+            TextXAlignment = Enum.TextXAlignment.Left,
+            Parent = Hero,
+        })
+
+        New("TextLabel", {
+            BackgroundTransparency = 1,
+            Position = UDim2.fromOffset(16, 120),
+            Size = UDim2.new(1, -32, 0, 18),
+            Text = Info.Subtitle or "Updates, support and a friendly community, all in one place.",
+            TextSize = 14,
+            TextTransparency = 0.25,
+            TextTruncate = Enum.TextTruncate.AtEnd,
+            TextXAlignment = Enum.TextXAlignment.Left,
+            Parent = Hero,
+        })
+
+        --// Perks \\--
+        local PerkCard = Card(2)
+        New("UIListLayout", {
+            Padding = UDim.new(0, 8),
+            SortOrder = Enum.SortOrder.LayoutOrder,
+            Parent = PerkCard,
+        })
+        New("UIPadding", {
+            PaddingBottom = UDim.new(0, 12),
+            PaddingLeft = UDim.new(0, 14),
+            PaddingRight = UDim.new(0, 14),
+            PaddingTop = UDim.new(0, 12),
+            Parent = PerkCard,
+        })
+        New("TextLabel", {
+            BackgroundTransparency = 1,
+            LayoutOrder = 0,
+            Size = UDim2.new(1, 0, 0, 16),
+            Text = "WHY JOIN",
+            TextSize = 13,
+            TextTransparency = 0.5,
+            TextXAlignment = Enum.TextXAlignment.Left,
+            Parent = PerkCard,
+        })
+        local CheckIcon = Library:GetIcon("check")
+        for Index, Perk in Perks do
+            local Row = New("Frame", {
+                AutomaticSize = Enum.AutomaticSize.Y,
+                BackgroundTransparency = 1,
+                LayoutOrder = Index,
+                Size = UDim2.new(1, 0, 0, 20),
+                Parent = PerkCard,
+            })
+            local Bullet = New("Frame", {
+                BackgroundColor3 = DiscordColor,
+                BackgroundTransparency = 0.75,
+                Size = UDim2.fromOffset(20, 20),
+                Parent = Row,
+            })
+            New("UICorner", {
+                CornerRadius = UDim.new(1, 0),
+                Parent = Bullet,
+            })
+            if CheckIcon then
+                local BulletIcon = New("ImageLabel", {
+                    AnchorPoint = Vector2.new(0.5, 0.5),
+                    BackgroundTransparency = 1,
+                    Position = UDim2.fromScale(0.5, 0.5),
+                    Size = UDim2.fromOffset(12, 12),
+                    Parent = Bullet,
+                })
+                Library:ApplyLucideIcon(BulletIcon, CheckIcon)
+                BulletIcon.ImageColor3 = DiscordColor:Lerp(Color3.new(1, 1, 1), 0.35)
+            end
+            New("TextLabel", {
+                AutomaticSize = Enum.AutomaticSize.Y,
+                BackgroundTransparency = 1,
+                Position = UDim2.fromOffset(30, 1),
+                Size = UDim2.new(1, -30, 0, 18),
+                Text = Perk,
+                TextSize = 15,
+                TextWrapped = true,
+                TextXAlignment = Enum.TextXAlignment.Left,
+                Parent = Row,
+            })
+        end
+
+        --// Invite actions \\--
+        local ActionCard = Card(3, 96)
+        New("TextLabel", {
+            BackgroundTransparency = 1,
+            Position = UDim2.fromOffset(14, 10),
+            Size = UDim2.new(1, -28, 0, 16),
+            Text = "INVITE",
+            TextSize = 13,
+            TextTransparency = 0.5,
+            TextXAlignment = Enum.TextXAlignment.Left,
+            Parent = ActionCard,
+        })
+
+        local function ActionButton(Text, Primary, Position, Size)
+            local Button = New("TextButton", {
+                BackgroundColor3 = if Primary then DiscordColor else "BackgroundColor",
+                Position = Position,
+                Size = Size,
+                Text = Text,
+                TextColor3 = if Primary then Color3.new(1, 1, 1) else "FontColor",
+                TextSize = 15,
+                Parent = ActionCard,
+            })
+            New("UICorner", {
+                CornerRadius = UDim.new(0, WindowInfo.CornerRadius),
+                Parent = Button,
+            })
+            if not Primary then
+                New("UIStroke", {
+                    ApplyStrokeMode = Enum.ApplyStrokeMode.Border,
+                    Color = "OutlineColor",
+                    Parent = Button,
+                })
+            end
+
+            local Base = Button.BackgroundColor3
+            Button.MouseEnter:Connect(function()
+                Base = Button.BackgroundColor3
+                TweenService:Create(Button, Library.TweenInfo, {
+                    BackgroundColor3 = Base:Lerp(Color3.new(1, 1, 1), 0.08),
+                }):Play()
+            end)
+            Button.MouseLeave:Connect(function()
+                TweenService:Create(Button, Library.TweenInfo, {
+                    BackgroundColor3 = Base,
+                }):Play()
+            end)
+
+            return Button
+        end
+
+        local LinkButton = ActionButton(
+            "discord.gg/" .. InviteCode,
+            false,
+            UDim2.fromOffset(14, 34),
+            UDim2.new(0.5, -18, 0, 36)
+        )
+        LinkButton.Font = Enum.Font.Code
+        local JoinButton = ActionButton("Join Server", true, UDim2.new(0.5, 4, 0, 34), UDim2.new(0.5, -18, 0, 36))
+
+        local function CopyInvite()
+            if setclipboard then
+                pcall(setclipboard, InviteLink)
+                Library:Notify({ Title = "Discord", Description = "Invite link copied to clipboard", Time = 3 })
+            else
+                Library:Notify({ Title = "Discord", Description = InviteLink, Time = 6 })
+            end
+        end
+
+        LinkButton.MouseButton1Click:Connect(CopyInvite)
+        JoinButton.MouseButton1Click:Connect(function()
+            --// Ask a running Discord client to open the invite, fall back to the clipboard
+            local Opened = false
+            if request then
+                local Success, Response = pcall(request, {
+                    Url = "http://127.0.0.1:6463/rpc?v=1",
+                    Method = "POST",
+                    Headers = {
+                        ["Content-Type"] = "application/json",
+                        Origin = "https://discord.com",
+                    },
+                    Body = game:GetService("HttpService"):JSONEncode({
+                        cmd = "INVITE_BROWSER",
+                        args = { code = InviteCode },
+                        nonce = game:GetService("HttpService"):GenerateGUID(false),
+                    }),
+                })
+                Opened = Success and Response and Response.StatusCode == 200
+            end
+
+            if Opened then
+                Library:Notify({ Title = "Discord", Description = "Invite opened in your Discord app", Time = 3 })
+            else
+                CopyInvite()
+            end
+        end)
+
+        --// Live member counts \\--
+        if request and InviteCode ~= "" and Info.ShowCounts ~= false then
+            task.spawn(function()
+                local Success, Response = pcall(request, {
+                    Url = "https://discord.com/api/v10/invites/" .. InviteCode .. "?with_counts=true",
+                    Method = "GET",
+                })
+                if not (Success and Response and Response.StatusCode == 200) then
+                    return
+                end
+
+                local Ok, Data = pcall(function()
+                    return game:GetService("HttpService"):JSONDecode(Response.Body)
+                end)
+                if not Ok or typeof(Data) ~= "table" then
+                    return
+                end
+
+                if not Info.Title and Data.guild and Data.guild.name then
+                    ServerName.Text = Data.guild.name
+                end
+                if Data.approximate_member_count then
+                    Stats.Text = string.format(
+                        '<font color="#23a55a">●</font> %s Online    <font color="#80848e">●</font> %s Members',
+                        tostring(Data.approximate_presence_count or 0),
+                        tostring(Data.approximate_member_count)
+                    )
+                end
+            end)
+        end
+
+        Tab.Invite = InviteLink
+        Tab.Page = Page
+        return Tab
     end
 
     function Window:AddTab(...)

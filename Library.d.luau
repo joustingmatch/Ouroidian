@@ -1002,6 +1002,21 @@ export type Window = {
         Description: string?,
         Order: number?
     ) -> Tab,
+    AddDiscordTab: (
+        self: Window,
+        Info: {
+            Invite: string,
+            Name: string?,
+            Icon: string?,
+            Description: string?,
+            Tooltip: string?,
+            Title: string?,
+            Subtitle: string?,
+            Perks: { string }?,
+            Color: Color3?,
+            ShowCounts: boolean?,
+        } | string
+    ) -> Tab,
     AddDialog: (
         self: Window,
         Idx: string,

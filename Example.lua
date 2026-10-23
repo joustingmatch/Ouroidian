@@ -54,6 +54,16 @@ local Tabs = {
 	Settings = Window:AddTab({ Name = "Settings", Icon = "settings", Description = "Menu, themes and configs" }),
 }
 
+-- Pinned to the bottom of the sidebar; opens a full "join our server" page
+Tabs.Discord = Window:AddDiscordTab({
+	Invite = "discord.gg/your-invite",
+	Perks = {
+		"Get notified the moment new updates drop",
+		"Suggest features and report bugs directly",
+		"Chat with the community and get support",
+	},
+})
+
 --// 2. Interface \\--
 
 --[[ Combat
