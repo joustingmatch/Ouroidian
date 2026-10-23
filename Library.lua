@@ -11960,7 +11960,7 @@ function Library:CreateWindow(WindowInfo)
         })
 
         --// Expanded card shown while hovering, like the iOS island growing into a live activity \\--
-        local ExpandedW, ExpandedH = 300, 100
+        local ExpandedW, ExpandedH, ExpandedPad, ExpandedRadius = 320, 114, 22, 30
         local IslandExpanded = New("CanvasGroup", {
             AnchorPoint = Vector2.new(0.5, 0.5),
             BackgroundTransparency = 1,
@@ -11976,8 +11976,8 @@ function Library:CreateWindow(WindowInfo)
         })
         local ExpandedIcon = New("ImageLabel", {
             BackgroundTransparency = 1,
-            Position = UDim2.fromOffset(16, 16),
-            Size = UDim2.fromOffset(24, 24),
+            Position = UDim2.fromOffset(ExpandedPad, 20),
+            Size = UDim2.fromOffset(28, 28),
             Visible = false,
             ZIndex = 52,
             Parent = IslandExpanded,
@@ -11988,8 +11988,8 @@ function Library:CreateWindow(WindowInfo)
         })
         local ExpandedTitle = New("TextLabel", {
             BackgroundTransparency = 1,
-            Position = UDim2.fromOffset(50, 13),
-            Size = UDim2.new(1, -120, 0, 17),
+            Position = UDim2.fromOffset(62, 18),
+            Size = UDim2.new(1, -150, 0, 17),
             Text = WindowInfo.Title,
             TextColor3 = Color3.new(1, 1, 1),
             TextSize = 15,
@@ -12000,8 +12000,8 @@ function Library:CreateWindow(WindowInfo)
         })
         local ExpandedHint = New("TextLabel", {
             BackgroundTransparency = 1,
-            Position = UDim2.fromOffset(50, 30),
-            Size = UDim2.new(1, -120, 0, 14),
+            Position = UDim2.fromOffset(62, 36),
+            Size = UDim2.new(1, -150, 0, 14),
             Text = "Click to open \u{00B7} drag to move",
             TextColor3 = Color3.fromRGB(150, 150, 155),
             TextSize = 12,
@@ -12012,7 +12012,7 @@ function Library:CreateWindow(WindowInfo)
         local ExpandedClock = New("TextLabel", {
             AnchorPoint = Vector2.new(1, 0),
             BackgroundTransparency = 1,
-            Position = UDim2.new(1, -16, 0, 13),
+            Position = UDim2.new(1, -ExpandedPad, 0, 18),
             Size = UDim2.fromOffset(60, 17),
             Text = "",
             TextColor3 = Color3.new(1, 1, 1),
@@ -12025,21 +12025,29 @@ function Library:CreateWindow(WindowInfo)
             BackgroundColor3 = Color3.new(1, 1, 1),
             BackgroundTransparency = 0.88,
             BorderSizePixel = 0,
-            Position = UDim2.fromOffset(16, 54),
-            Size = UDim2.new(1, -32, 0, 1),
+            Position = UDim2.fromOffset(ExpandedPad, 62),
+            Size = UDim2.new(1, -ExpandedPad * 2, 0, 1),
+            ZIndex = 52,
+            Parent = IslandExpanded,
+        })
+        local ExpandedStatsRow = New("Frame", {
+            BackgroundTransparency = 1,
+            Position = UDim2.fromOffset(ExpandedPad, 72),
+            Size = UDim2.new(1, -ExpandedPad * 2, 0, 31),
             ZIndex = 52,
             Parent = IslandExpanded,
         })
 
         local ExpandedStats = {}
+        local StatAlignments = { Enum.TextXAlignment.Left, Enum.TextXAlignment.Center, Enum.TextXAlignment.Right }
         for Index, Caption in { "FPS", "PING", "PLAYERS" } do
-            local Alignment = Index == 1 and Enum.TextXAlignment.Left or Enum.TextXAlignment.Center
+            local Alignment = StatAlignments[Index]
             local Column = New("Frame", {
                 BackgroundTransparency = 1,
-                Position = UDim2.new((Index - 1) / 3, Index == 1 and 16 or 0, 0, 62),
-                Size = UDim2.new(1 / 3, Index == 1 and -16 or 0, 0, 30),
+                Position = UDim2.fromScale((Index - 1) / 3, 0),
+                Size = UDim2.fromScale(1 / 3, 1),
                 ZIndex = 52,
-                Parent = IslandExpanded,
+                Parent = ExpandedStatsRow,
             })
             New("TextLabel", {
                 BackgroundTransparency = 1,
@@ -12053,7 +12061,7 @@ function Library:CreateWindow(WindowInfo)
             })
             ExpandedStats[Caption] = New("TextLabel", {
                 BackgroundTransparency = 1,
-                Position = UDim2.fromOffset(0, 13),
+                Position = UDim2.fromOffset(0, 14),
                 Size = UDim2.new(1, 0, 0, 17),
                 Text = "-",
                 TextColor3 = Color3.new(1, 1, 1),
@@ -12077,9 +12085,9 @@ function Library:CreateWindow(WindowInfo)
                     ExpandedIcon.ImageColor3 = Color3.new(1, 1, 1)
                 end
             end
-            local TextX = Icon and 50 or 16
-            ExpandedTitle.Position = UDim2.fromOffset(TextX, 13)
-            ExpandedHint.Position = UDim2.fromOffset(TextX, 30)
+            local TextX = Icon and 62 or ExpandedPad
+            ExpandedTitle.Position = UDim2.fromOffset(TextX, 18)
+            ExpandedHint.Position = UDim2.fromOffset(TextX, 36)
         end
         SetIslandIcon(WindowInfo.IslandIcon or WindowInfo.Icon or "sparkles")
 
@@ -12202,10 +12210,13 @@ function Library:CreateWindow(WindowInfo)
 
             Island.Position = UDim2.fromOffset(X - W / 2, Y - H / 2)
             Island.Size = UDim2.fromOffset(W, H)
-            IslandCorner.CornerRadius = UDim.new(0, WindowInfo.CornerRadius + (math.min(W, H) / 2 - WindowInfo.CornerRadius) * Round)
+            -- the card keeps softer, fixed corners instead of a full pill so its content has room
+            local Expand = math.clamp(Springs.E.P, 0, 1)
+            local PillRadius = math.min(W, H) / 2
+            PillRadius += (math.min(PillRadius, ExpandedRadius * Library.DPIScale) - PillRadius) * Expand
+            IslandCorner.CornerRadius = UDim.new(0, WindowInfo.CornerRadius + (PillRadius - WindowInfo.CornerRadius) * Round)
 
             -- scale content against the shape the island is morphing toward so it never balloons mid-expand
-            local Expand = math.clamp(Springs.E.P, 0, 1)
             local PillW, PillH = GetPillSize()
             local EW, EH = GetExpandedSize()
             local ShapeW, ShapeH = PillW + (EW - PillW) * Expand, PillH + (EH - PillH) * Expand
