@@ -378,6 +378,7 @@ local Templates = {
         Position = UDim2.fromOffset(6, 6),
         Size = UDim2.fromOffset(720, 600),
         IconSize = UDim2.fromOffset(30, 30),
+        IslandIcon = nil,
 
         AutoShow = true,
         Center = true,
@@ -10909,7 +10910,7 @@ function Library:CreateWindow(WindowInfo)
     local CurrentTabDescription
     local ResizeButton
     local IslandMinimized = false
-    local DismissIsland
+    local DismissIsland, SetIslandIcon
     local Tabs
     local Container
     local BackgroundImage
@@ -11511,6 +11512,11 @@ function Library:CreateWindow(WindowInfo)
         end)
 
         local IslandBusy = false
+        local IslandDragging = false
+        local IslandHovered = false
+        local IslandPressed = false
+        local IslandCenter -- remembered pill center (screen offset), nil = top center
+
         local Island = New("TextButton", {
             AutoButtonColor = false,
             BackgroundColor3 = Color3.new(0, 0, 0),
@@ -11531,7 +11537,9 @@ function Library:CreateWindow(WindowInfo)
             Parent = Island,
         })
         local IslandContent = New("Frame", {
+            AnchorPoint = Vector2.new(0.5, 0.5),
             BackgroundTransparency = 1,
+            Position = UDim2.fromScale(0.5, 0.5),
             Size = UDim2.fromScale(1, 1),
             ZIndex = 51,
             Parent = Island,
@@ -11543,16 +11551,20 @@ function Library:CreateWindow(WindowInfo)
             Padding = UDim.new(0, 8),
             Parent = IslandContent,
         })
-        local IslandDot = New("Frame", {
-            BackgroundColor3 = "AccentColor",
+        local IslandContentScale = New("UIScale", {
+            Parent = IslandContent,
+        })
+        local IslandIcon = New("ImageLabel", {
             BackgroundTransparency = 1,
-            Size = UDim2.fromOffset(8, 8),
+            ImageTransparency = 1,
+            Size = UDim2.fromOffset(18, 18),
+            Visible = false,
             ZIndex = 52,
             Parent = IslandContent,
         })
         New("UICorner", {
-            CornerRadius = UDim.new(1, 0),
-            Parent = IslandDot,
+            CornerRadius = UDim.new(0, 4),
+            Parent = IslandIcon,
         })
         local IslandTitle = New("TextLabel", {
             AutomaticSize = Enum.AutomaticSize.X,
@@ -11566,23 +11578,132 @@ function Library:CreateWindow(WindowInfo)
             Parent = IslandContent,
         })
 
+        SetIslandIcon = function(IconName)
+            local Icon = Library:GetCustomIcon(IconName)
+            IslandIcon.Visible = Icon ~= nil
+            if Icon then
+                Library:ApplyLucideIcon(IslandIcon, Icon)
+                -- lucide icons are monochrome; tint them white to sit on the black pill
+                if typeof(IconName) == "string" and Library:GetIcon(IconName) then
+                    IslandIcon.ImageColor3 = Color3.new(1, 1, 1)
+                end
+            end
+        end
+        SetIslandIcon(WindowInfo.IslandIcon or WindowInfo.Icon or "sparkles")
+
+        --// Spring physics: every dimension is a damped spring so the island moves like liquid \\--
+        local Springs = {
+            X = { P = 0, V = 0, T = 0, K = 230, D = 22 },
+            Y = { P = 0, V = 0, T = 0, K = 230, D = 22 },
+            W = { P = 0, V = 0, T = 0, K = 170, D = 13 }, -- looser so width wobbles like jelly
+            H = { P = 0, V = 0, T = 0, K = 300, D = 19 },
+            R = { P = 0, V = 0, T = 0, K = 200, D = 24 }, -- roundness: 0 = window corners, 1 = pill
+        }
+
+        local function SetSpring(Spring, Target, Snap)
+            Spring.T = Target
+            if Snap then
+                Spring.P, Spring.V = Target, 0
+            end
+        end
+
+        local function SpringsSettled()
+            for _, Spring in Springs do
+                if math.abs(Spring.T - Spring.P) > 0.75 or math.abs(Spring.V) > 6 then
+                    return false
+                end
+            end
+            return true
+        end
+
         local function GetMainRect()
             local Offset = ScreenGui.AbsolutePosition
-            return UDim2.fromOffset(MainFrame.AbsolutePosition.X - Offset.X, MainFrame.AbsolutePosition.Y - Offset.Y),
-                UDim2.fromOffset(MainFrame.AbsoluteSize.X, MainFrame.AbsoluteSize.Y)
+            local Pos, Size = MainFrame.AbsolutePosition - Offset, MainFrame.AbsoluteSize
+            return Pos.X + Size.X / 2, Pos.Y + Size.Y / 2, Size.X, Size.Y
         end
 
-        local function GetIslandRect()
+        local function GetPillSize()
             local Scale = Library.DPIScale
-            local Width = math.clamp(IslandTitle.TextBounds.X + 64, 140, 320) * Scale
-            local Height = 36 * Scale
-            local ScreenWidth = ScreenGui.AbsoluteSize.X
-            return UDim2.fromOffset((ScreenWidth - Width) / 2, 12 * Scale), UDim2.fromOffset(Width, Height), Height
+            local IconWidth = IslandIcon.Visible and 26 or 0
+            return math.clamp(IslandTitle.TextBounds.X + IconWidth + 48, 120, 340) * Scale, 36 * Scale
         end
 
-        local ExpandInfo = TweenInfo.new(0.45, Enum.EasingStyle.Back, Enum.EasingDirection.Out, 0, false, 0)
-        local ShrinkInfo = TweenInfo.new(0.4, Enum.EasingStyle.Quint, Enum.EasingDirection.InOut)
+        local function ClampCenter(X, Y, W, H)
+            local Screen = ScreenGui.AbsoluteSize
+            return math.clamp(X, W / 2, math.max(W / 2, Screen.X - W / 2)),
+                math.clamp(Y, H / 2, math.max(H / 2, Screen.Y - H / 2))
+        end
+
+        local function SetPillTargets(Snap)
+            local W, H = GetPillSize()
+            local Scale = (IslandPressed and 0.92) or (IslandHovered and 1.06) or 1
+            local X, Y
+            if IslandCenter then
+                X, Y = ClampCenter(IslandCenter.X, IslandCenter.Y, W, H)
+            else
+                X, Y = ScreenGui.AbsoluteSize.X / 2, 12 * Library.DPIScale + H / 2
+            end
+            SetSpring(Springs.X, X, Snap)
+            SetSpring(Springs.Y, Y, Snap)
+            SetSpring(Springs.W, W * Scale)
+            SetSpring(Springs.H, H * Scale)
+            SetSpring(Springs.R, 1)
+        end
+
+        Library:GiveSignal(RunService.RenderStepped:Connect(function(DeltaTime)
+            if not Island.Visible then
+                return
+            end
+
+            -- fixed substeps keep the springs stable on low framerates
+            local Steps = math.clamp(math.ceil(DeltaTime / (1 / 240)), 1, 16)
+            local Step = math.min(DeltaTime, 1 / 15) / Steps
+            for _ = 1, Steps do
+                for _, Spring in Springs do
+                    local Accel = Spring.K * (Spring.T - Spring.P) - Spring.D * Spring.V
+                    Spring.V += Accel * Step
+                    Spring.P += Spring.V * Step
+                end
+            end
+
+            local X, Y, W, H = Springs.X.P, Springs.Y.P, Springs.W.P, Springs.H.P
+            local Round = math.clamp(Springs.R.P, 0, 1)
+
+            -- stretch along the direction of travel, squash across it (only once it's a blob)
+            local SpeedX = math.abs(Springs.X.V)
+            local SpeedY = math.abs(Springs.Y.V)
+            local StretchX = math.clamp(SpeedX / 2500, 0, 0.3) - math.clamp(SpeedY / 5000, 0, 0.12)
+            local StretchY = math.clamp(SpeedY / 2500, 0, 0.3) - math.clamp(SpeedX / 5000, 0, 0.12)
+            W = math.max(4, W * (1 + StretchX * Round))
+            H = math.max(4, H * (1 + StretchY * Round))
+
+            Island.Position = UDim2.fromOffset(X - W / 2, Y - H / 2)
+            Island.Size = UDim2.fromOffset(W, H)
+            IslandCorner.CornerRadius = UDim.new(0, WindowInfo.CornerRadius + (math.min(W, H) / 2 - WindowInfo.CornerRadius) * Round)
+
+            local PillW, PillH = GetPillSize()
+            IslandContentScale.Scale = Library.DPIScale * math.clamp(math.min(W / PillW, H / PillH), 0.6, 1.15)
+        end))
+
         local FadeInfo = TweenInfo.new(0.2, Enum.EasingStyle.Quad, Enum.EasingDirection.Out)
+        local ColorInfo = TweenInfo.new(0.35, Enum.EasingStyle.Quint, Enum.EasingDirection.Out)
+
+        local function FadeContent(Transparency)
+            TweenService:Create(IslandTitle, FadeInfo, { TextTransparency = Transparency }):Play()
+            local IconTween = TweenService:Create(IslandIcon, FadeInfo, { ImageTransparency = Transparency })
+            IconTween:Play()
+            return IconTween
+        end
+
+        local function WaitForSettle(Timeout, Threshold)
+            local Start = os.clock()
+            while os.clock() - Start < Timeout do
+                if SpringsSettled() or (Threshold and Threshold()) then
+                    return
+                end
+                RunService.RenderStepped:Wait()
+            end
+        end
 
         local function MinimizeToIsland()
             if IslandMinimized or IslandBusy then
@@ -11591,28 +11712,26 @@ function Library:CreateWindow(WindowInfo)
             IslandMinimized, IslandBusy = true, true
             IslandTitle.Text = WindowInfo.Title
 
-            local StartPos, StartSize = GetMainRect()
-            local EndPos, EndSize, Height = GetIslandRect()
-            Island.Position, Island.Size = StartPos, StartSize
+            local X, Y, W, H = GetMainRect()
+            SetSpring(Springs.X, X, true)
+            SetSpring(Springs.Y, Y, true)
+            SetSpring(Springs.W, W, true)
+            SetSpring(Springs.H, H, true)
+            SetSpring(Springs.R, 0, true)
             Island.BackgroundColor3 = MainFrame.BackgroundColor3
-            IslandCorner.CornerRadius = UDim.new(0, WindowInfo.CornerRadius)
             Island.Visible = true
             MainFrame.Visible = false
             TooltipLabel.Visible = false
 
-            TweenService:Create(Island, ShrinkInfo, {
-                Position = EndPos,
-                Size = EndSize,
-                BackgroundColor3 = Color3.new(0, 0, 0),
-            }):Play()
-            local CornerTween = TweenService:Create(IslandCorner, ShrinkInfo, {
-                CornerRadius = UDim.new(0, Height / 2),
-            })
-            CornerTween:Play()
-            CornerTween.Completed:Wait()
+            -- pinch the height first so it collapses like a drop before spreading into a pill
+            Springs.H.V = -H * 6
+            SetPillTargets(false)
+            TweenService:Create(Island, ColorInfo, { BackgroundColor3 = Color3.new(0, 0, 0) }):Play()
 
-            TweenService:Create(IslandTitle, FadeInfo, { TextTransparency = 0 }):Play()
-            TweenService:Create(IslandDot, FadeInfo, { BackgroundTransparency = 0 }):Play()
+            WaitForSettle(0.6, function()
+                return math.abs(Springs.W.T - Springs.W.P) < Springs.W.T * 0.15
+            end)
+            FadeContent(0)
             IslandBusy = false
         end
 
@@ -11620,24 +11739,22 @@ function Library:CreateWindow(WindowInfo)
             if not IslandMinimized or IslandBusy then
                 return
             end
-            IslandBusy = true
+            IslandBusy, IslandPressed, IslandHovered = true, false, false
 
-            TweenService:Create(IslandTitle, FadeInfo, { TextTransparency = 1 }):Play()
-            local DotTween = TweenService:Create(IslandDot, FadeInfo, { BackgroundTransparency = 1 })
-            DotTween:Play()
-            DotTween.Completed:Wait()
+            FadeContent(1).Completed:Wait()
 
-            local EndPos, EndSize = GetMainRect()
-            TweenService:Create(Island, ExpandInfo, {
-                Position = EndPos,
-                Size = EndSize,
-                BackgroundColor3 = MainFrame.BackgroundColor3,
-            }):Play()
-            local CornerTween = TweenService:Create(IslandCorner, ExpandInfo, {
-                CornerRadius = UDim.new(0, WindowInfo.CornerRadius),
-            })
-            CornerTween:Play()
-            CornerTween.Completed:Wait()
+            local X, Y, W, H = GetMainRect()
+            SetSpring(Springs.X, X)
+            SetSpring(Springs.Y, Y)
+            SetSpring(Springs.W, W)
+            SetSpring(Springs.H, H)
+            SetSpring(Springs.R, 0)
+            TweenService:Create(Island, ColorInfo, { BackgroundColor3 = MainFrame.BackgroundColor3 }):Play()
+
+            WaitForSettle(1, function()
+                return math.abs(Springs.W.T - Springs.W.P) < 3 and math.abs(Springs.H.T - Springs.H.P) < 3
+                    and math.abs(Springs.X.T - Springs.X.P) < 3 and math.abs(Springs.Y.T - Springs.Y.P) < 3
+            end)
 
             MainFrame.Visible = Library.Toggled
             Island.Visible = false
@@ -11647,23 +11764,70 @@ function Library:CreateWindow(WindowInfo)
         DismissIsland = function()
             Island.Visible = false
             IslandTitle.TextTransparency = 1
-            IslandDot.BackgroundTransparency = 1
-            IslandMinimized, IslandBusy = false, false
+            IslandIcon.ImageTransparency = 1
+            IslandMinimized, IslandBusy, IslandDragging, IslandPressed, IslandHovered = false, false, false, false, false
+        end
+
+        local function RefreshPill()
+            if IslandMinimized and not IslandBusy then
+                SetPillTargets(false)
+            end
         end
 
         Island.MouseEnter:Connect(function()
-            if IslandMinimized and not IslandBusy then
-                TweenService:Create(IslandStroke, FadeInfo, { Transparency = 0.2 }):Play()
-            end
+            IslandHovered = true
+            TweenService:Create(IslandStroke, FadeInfo, { Transparency = 0.2 }):Play()
+            RefreshPill()
         end)
         Island.MouseLeave:Connect(function()
+            IslandHovered = false
             TweenService:Create(IslandStroke, FadeInfo, { Transparency = 0.6 }):Play()
+            RefreshPill()
         end)
+
+        --// Dragging: a press that moves past a small threshold drags, otherwise it restores \\--
+        local DragStartInput, DragStartCenter
+        Island.InputBegan:Connect(function(Input: InputObject)
+            if not IsClickInput(Input) or not IslandMinimized or IslandBusy then
+                return
+            end
+            IslandPressed, IslandDragging = true, false
+            DragStartInput = Input.Position
+            DragStartCenter = Vector2.new(Springs.X.T, Springs.Y.T)
+            RefreshPill()
+        end)
+
+        Library:GiveSignal(UserInputService.InputChanged:Connect(function(Input: InputObject)
+            if not IslandPressed or not IsMovementInput(Input) then
+                return
+            end
+            local Delta = Vector2.new(Input.Position.X, Input.Position.Y) - Vector2.new(DragStartInput.X, DragStartInput.Y)
+            if not IslandDragging and Delta.Magnitude < 5 then
+                return
+            end
+            IslandDragging = true
+            local W, H = GetPillSize()
+            local X, Y = ClampCenter(DragStartCenter.X + Delta.X, DragStartCenter.Y + Delta.Y, W, H)
+            IslandCenter = Vector2.new(X, Y)
+            SetSpring(Springs.X, X)
+            SetSpring(Springs.Y, Y)
+        end))
+
+        Library:GiveSignal(UserInputService.InputEnded:Connect(function(Input: InputObject)
+            if not IslandPressed or not IsMouseInput(Input) then
+                return
+            end
+            local WasDragging = IslandDragging
+            IslandPressed, IslandDragging = false, false
+            if WasDragging then
+                RefreshPill()
+            else
+                task.spawn(RestoreFromIsland)
+            end
+        end))
+
         MinimizeButton.MouseButton1Click:Connect(function()
             task.spawn(MinimizeToIsland)
-        end)
-        Island.MouseButton1Click:Connect(function()
-            task.spawn(RestoreFromIsland)
         end)
 
         --// Bottom Bar \\--
@@ -11822,6 +11986,13 @@ function Library:CreateWindow(WindowInfo)
         WindowSubtitle.Text = Subtitle or ""
         WindowSubtitle.Visible = typeof(Subtitle) == "string" and Subtitle ~= ""
         RefreshWindowTitleSize()
+    end
+
+    function Window:SetIslandIcon(Icon: string | number)
+        WindowInfo.IslandIcon = Icon
+        if SetIslandIcon then
+            SetIslandIcon(Icon)
+        end
     end
 
     function Window:RefreshTitleSize()
