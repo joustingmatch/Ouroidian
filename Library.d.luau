@@ -790,7 +790,40 @@ export type Tabbox = {
     SetPopOutWidth: (self: Tabbox, Width: number?) -> (),
 }
 
+export type TabPage = {
+    IsSubTab: true,
+    Name: string,
+    Tab: Tab,
+    Section: TabPageSection,
+    Button: TextButton,
+    Container: Frame,
+    Sides: { ScrollingFrame },
+
+    AddGroupbox: (self: TabPage, Info: { Side: number | string, Name: string, IconName: string? }) -> Groupbox,
+    AddTabbox: (self: TabPage, Info: { Side: number | string, Name: string? }) -> Tabbox,
+    AddLeftGroupbox: (self: TabPage, Name: string, IconName: string?) -> Groupbox,
+    AddRightGroupbox: (self: TabPage, Name: string, IconName: string?) -> Groupbox,
+    AddLeftTabbox: (self: TabPage, Name: string?) -> Tabbox,
+    AddRightTabbox: (self: TabPage, Name: string?) -> Tabbox,
+    SetBadge: (self: TabPage, Badge: (string | number)?) -> (),
+    Show: (self: TabPage) -> (),
+}
+
+export type TabPageSection = {
+    Name: string?,
+    Collapsed: boolean,
+    SubTabs: { TabPage },
+
+    AddSubTab: (self: TabPageSection, Info: { Name: string, Badge: (string | number)? } | string, Badge: (string | number)?) -> TabPage,
+    SetCollapsed: (self: TabPageSection, Collapsed: boolean) -> (),
+}
+
 export type Tab = {
+    SubTabs: { [string]: TabPage }?,
+    SubTabSections: { TabPageSection }?,
+    ActiveSubTab: TabPage?,
+    AddSubTab: (self: Tab, Info: { Name: string, Badge: (string | number)? } | string, Badge: (string | number)?) -> TabPage,
+    AddSubTabSection: (self: Tab, Name: string) -> TabPageSection,
     Window: Window,
     Groupboxes: { [string]: Groupbox },
     Tabboxes: { [string]: Tabbox },
@@ -1193,6 +1226,7 @@ export type Library = {
             EnableCompacting: boolean?,
             DisableCompactingSnap: boolean?,
             SidebarCompacted: boolean?,
+            SubTabWidth: number?,
             MinContainerWidth: number?,
             MinSidebarWidth: number?,
             SidebarCompactWidth: number?,

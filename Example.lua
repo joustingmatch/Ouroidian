@@ -39,6 +39,7 @@ local Window = Library:CreateWindow({
 local Tabs = {
 	-- Creates a new tab titled Main
 	Main = Window:AddTab("Main", "user"),
+	Rolling = Window:AddTab("Rolling", "dices"),
 	["UI Settings"] = Window:AddTab("UI Settings", "settings"),
 }
 
@@ -691,6 +692,21 @@ Tab2:AddToggle("Tab2Toggle", { Text = "Tab2 Toggle" })
 Library:OnUnload(function()
 	print("Unloaded!")
 end)
+
+-- Sub Tabs
+-- Tabs can hold sub-tabs, listed in a panel beside the sidebar. Sections group them under a collapsible header
+local RollingSection = Tabs.Rolling:AddSubTabSection("Rolling")
+local FamilyRolls = RollingSection:AddSubTab("Family rolls")
+local CraftPerks = RollingSection:AddSubTab({ Name = "Craft perks", Badge = 2 })
+RollingSection:AddSubTab({ Name = "Enhance perks", Badge = 1 })
+
+-- Sub-tabs take groupboxes and tabboxes just like a tab
+FamilyRolls:AddGroupbox({ Side = 1, Name = "Family", IconName = "users" }):AddToggle("AutoRollFamily", {
+	Text = "Auto roll",
+	Default = false,
+})
+CraftPerks:AddGroupbox({ Side = 1, Name = "Crafting", IconName = "hammer" }):AddLabel("Craft perk settings")
+CraftPerks:SetBadge(nil) -- clears the badge
 
 -- DraggableLabel
 

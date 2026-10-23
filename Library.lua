@@ -406,7 +406,8 @@ local Templates = {
         EnableSidebarResize = false,
         EnableCompacting = true,
         DisableCompactingSnap = false,
-        SidebarCompacted = false,
+        SidebarCompacted = true,
+        SubTabWidth = 150,
         MinContainerWidth = 256,
 
         --// Snapping \\--
@@ -12283,6 +12284,11 @@ function Library:CreateWindow(WindowInfo)
             Tab:RefreshSides()
         end
 
+        local function GetSide(Owner, Side)
+            local Sides = if Owner and Owner.IsSubTab then Owner.Sides else { TabLeft, TabRight }
+            return if Side == 1 then Sides[1] else Sides[2]
+        end
+
         local function AddTabbox(self, Info)
             Info = Library:Validate(Info, Templates.Tabbox)
             local ParentObj = self
@@ -12301,7 +12307,7 @@ function Library:CreateWindow(WindowInfo)
                 AutomaticSize = Enum.AutomaticSize.Y,
                 BackgroundTransparency = 1,
                 Size = UDim2.fromScale(1, 0),
-                Parent = if IsNested then ParentObj.Container else (Info.Side == 1 and TabLeft or TabRight),
+                Parent = if IsNested then ParentObj.Container else GetSide(ParentObj, Info.Side),
             })
             New("UIListLayout", {
                 Padding = UDim.new(0, 6),
@@ -12690,7 +12696,7 @@ function Library:CreateWindow(WindowInfo)
                 AutomaticSize = Enum.AutomaticSize.Y,
                 BackgroundTransparency = 1,
                 Size = UDim2.fromScale(1, 0),
-                Parent = (Info.Side == 1) and TabLeft or TabRight,
+                Parent = GetSide(self, Info.Side),
             })
             local BoxHolderList = New("UIListLayout", {
                 Padding = UDim.new(0, 6),
@@ -13102,6 +13108,299 @@ function Library:CreateWindow(WindowInfo)
         --// Deprecated - Use Tab:AddGroupbox instead.
         function Tab:AddRightGroupbox(Name, IconName, Visible, Collapsed, DisableCollapsing)
             return Tab:AddGroupbox({ Side = 2, Name = Name, IconName = IconName, Visible = Visible, Collapsed = Collapsed, DisableCollapsing = DisableCollapsing })
+        end
+
+        --// Sub Tabs \\--
+        local SubTabPanel
+        local SubTabList
+        local DefaultSection
+
+        local function CreateSubTabPanel()
+            if SubTabPanel then
+                return
+            end
+
+            local Width = WindowInfo.SubTabWidth
+            SubTabPanel = New("ScrollingFrame", {
+                AutomaticCanvasSize = Enum.AutomaticSize.Y,
+                BackgroundColor3 = "BackgroundColor",
+                CanvasSize = UDim2.fromScale(0, 0),
+                Position = UDim2.fromOffset(-6, 0),
+                ScrollBarImageTransparency = 1,
+                ScrollBarThickness = 0,
+                Size = UDim2.new(0, Width, 1, 0),
+                Parent = TabContainer,
+            })
+            SubTabList = New("UIListLayout", {
+                Padding = UDim.new(0, 6),
+                SortOrder = Enum.SortOrder.LayoutOrder,
+                Parent = SubTabPanel,
+            })
+            New("UIPadding", {
+                PaddingBottom = UDim.new(0, 8),
+                PaddingLeft = UDim.new(0, 8),
+                PaddingRight = UDim.new(0, 8),
+                PaddingTop = UDim.new(0, 8),
+                Parent = SubTabPanel,
+            })
+            Library:MakeLine(TabContainer, {
+                Position = UDim2.fromOffset(Width - 6, 0),
+                Size = UDim2.new(0, 1, 1, 0),
+            })
+
+            TabLeft.Visible = false
+            TabRight.Visible = false
+            Tab.SubTabs = {}
+            Tab.SubTabSections = {}
+        end
+
+        local function CreateSection(SectionName)
+            CreateSubTabPanel()
+
+            local Section = {
+                Name = SectionName,
+                Collapsed = false,
+                SubTabs = {},
+            }
+
+            local SectionHolder = New("Frame", {
+                AutomaticSize = Enum.AutomaticSize.Y,
+                BackgroundTransparency = 1,
+                LayoutOrder = #Tab.SubTabSections,
+                Size = UDim2.fromScale(1, 0),
+                Parent = SubTabPanel,
+            })
+            New("UIListLayout", {
+                Padding = UDim.new(0, 2),
+                SortOrder = Enum.SortOrder.LayoutOrder,
+                Parent = SectionHolder,
+            })
+
+            local ItemHolder = New("Frame", {
+                AutomaticSize = Enum.AutomaticSize.Y,
+                BackgroundTransparency = 1,
+                LayoutOrder = 1,
+                Size = UDim2.fromScale(1, 0),
+                Parent = SectionHolder,
+            })
+            New("UIListLayout", {
+                Padding = UDim.new(0, 2),
+                SortOrder = Enum.SortOrder.LayoutOrder,
+                Parent = ItemHolder,
+            })
+
+            if SectionName then
+                local Header = New("TextButton", {
+                    BackgroundTransparency = 1,
+                    Size = UDim2.new(1, 0, 0, 20),
+                    Text = "",
+                    Parent = SectionHolder,
+                })
+                New("TextLabel", {
+                    BackgroundTransparency = 1,
+                    Position = UDim2.fromOffset(4, 0),
+                    Size = UDim2.new(1, -24, 1, 0),
+                    Text = string.upper(SectionName),
+                    TextSize = 12,
+                    TextTransparency = 0.6,
+                    TextXAlignment = Enum.TextXAlignment.Left,
+                    Parent = Header,
+                })
+
+                local Arrow = New("ImageLabel", {
+                    AnchorPoint = Vector2.new(1, 0.5),
+                    ImageColor3 = "FontColor",
+                    ImageTransparency = 0.6,
+                    Position = UDim2.new(1, -2, 0.5, 0),
+                    Size = UDim2.fromOffset(14, 14),
+                    Parent = Header,
+                })
+                if ArrowIcon then
+                    Library:ApplyLucideIcon(Arrow, ArrowIcon)
+                end
+
+                function Section:SetCollapsed(Collapsed: boolean)
+                    Section.Collapsed = Collapsed
+                    ItemHolder.Visible = not Collapsed
+                    Arrow.Rotation = Collapsed and 180 or 0
+                end
+
+                Header.MouseButton1Click:Connect(function()
+                    Section:SetCollapsed(not Section.Collapsed)
+                end)
+            end
+
+            function Section:AddSubTab(...)
+                local Info = if typeof(...) == "table" then ... else { Name = select(1, ...), Badge = select(2, ...) }
+                local SubName = Info.Name or "Sub Tab"
+
+                local Button = New("TextButton", {
+                    BackgroundColor3 = "MainColor",
+                    BackgroundTransparency = 1,
+                    LayoutOrder = #Section.SubTabs,
+                    Size = UDim2.new(1, 0, 0, 26),
+                    Text = "",
+                    Parent = ItemHolder,
+                })
+                New("UICorner", {
+                    CornerRadius = UDim.new(0, TabButtonsStyle.CornerRadius),
+                    Parent = Button,
+                })
+                local Label = New("TextLabel", {
+                    BackgroundTransparency = 1,
+                    Position = UDim2.fromOffset(6, 0),
+                    Size = UDim2.new(1, -32, 1, 0),
+                    Text = SubName,
+                    TextSize = 14,
+                    TextTransparency = 0.4,
+                    TextTruncate = Enum.TextTruncate.AtEnd,
+                    TextXAlignment = Enum.TextXAlignment.Left,
+                    Parent = Button,
+                })
+                local BadgeLabel = New("TextLabel", {
+                    AnchorPoint = Vector2.new(1, 0),
+                    BackgroundTransparency = 1,
+                    Position = UDim2.new(1, -6, 0, 0),
+                    Size = UDim2.new(0, 24, 1, 0),
+                    Text = "",
+                    TextColor3 = "AccentColor",
+                    TextSize = 13,
+                    TextXAlignment = Enum.TextXAlignment.Right,
+                    Parent = Button,
+                })
+
+                local Page = New("Frame", {
+                    BackgroundTransparency = 1,
+                    Position = UDim2.fromOffset(WindowInfo.SubTabWidth - 3, 0),
+                    Size = UDim2.new(1, -WindowInfo.SubTabWidth + 3, 1, 0),
+                    Visible = false,
+                    Parent = TabContainer,
+                })
+
+                local function MakeSide(Right)
+                    local Side = New("ScrollingFrame", {
+                        AnchorPoint = Vector2.new(Right and 1 or 0, 0),
+                        AutomaticCanvasSize = Enum.AutomaticSize.Y,
+                        BackgroundTransparency = 1,
+                        CanvasSize = UDim2.fromScale(0, 0),
+                        Position = UDim2.fromScale(Right and 1 or 0, 0),
+                        ScrollBarImageTransparency = 1,
+                        ScrollBarThickness = 0,
+                        Size = UDim2.new(0.5, -3, 1, 0),
+                        Parent = Page,
+                    })
+                    New("UIListLayout", {
+                        Padding = UDim.new(0, 2),
+                        Parent = Side,
+                    })
+                    New("UIPadding", {
+                        PaddingBottom = UDim.new(0, 2),
+                        PaddingLeft = UDim.new(0, 2),
+                        PaddingRight = UDim.new(0, 2),
+                        PaddingTop = UDim.new(0, 2),
+                        Parent = Side,
+                    })
+                    New("Frame", { BackgroundTransparency = 1, LayoutOrder = -1, Parent = Side })
+                    New("Frame", { BackgroundTransparency = 1, LayoutOrder = 1, Parent = Side })
+                    return Side
+                end
+
+                local SubTab = {
+                    IsSubTab = true,
+                    Name = SubName,
+                    Tab = Tab,
+                    Section = Section,
+                    Button = Button,
+                    Container = Page,
+                    Sides = { MakeSide(false), MakeSide(true) },
+                }
+
+                function SubTab:AddGroupbox(GroupInfo)
+                    return Tab.AddGroupbox(SubTab, GroupInfo)
+                end
+
+                function SubTab:AddTabbox(BoxInfo)
+                    return Tab.AddTabbox(SubTab, BoxInfo)
+                end
+
+                function SubTab:AddLeftGroupbox(GroupName, IconName)
+                    return SubTab:AddGroupbox({ Side = 1, Name = GroupName, IconName = IconName })
+                end
+
+                function SubTab:AddRightGroupbox(GroupName, IconName)
+                    return SubTab:AddGroupbox({ Side = 2, Name = GroupName, IconName = IconName })
+                end
+
+                function SubTab:AddLeftTabbox(BoxName)
+                    return SubTab:AddTabbox({ Side = 1, Name = BoxName })
+                end
+
+                function SubTab:AddRightTabbox(BoxName)
+                    return SubTab:AddTabbox({ Side = 2, Name = BoxName })
+                end
+
+                function SubTab:SetBadge(Badge: (string | number)?)
+                    BadgeLabel.Text = if Badge == nil then "" else tostring(Badge)
+                end
+
+                function SubTab:Show()
+                    local Previous = Tab.ActiveSubTab
+                    if Previous == SubTab then
+                        return
+                    end
+
+                    if Previous then
+                        Previous.Container.Visible = false
+                        TweenService:Create(Previous.Button, Library.TweenInfo, { BackgroundTransparency = 1 }):Play()
+                        TweenService:Create(Previous.Label, Library.TweenInfo, { TextTransparency = 0.4 }):Play()
+                    end
+
+                    Tab.ActiveSubTab = SubTab
+                    Tab.Sides = SubTab.Sides
+                    Page.Visible = true
+                    TweenService:Create(Button, Library.TweenInfo, { BackgroundTransparency = 0 }):Play()
+                    TweenService:Create(Label, Library.TweenInfo, { TextTransparency = 0 }):Play()
+                    Tab:RefreshSides()
+                end
+
+                SubTab.Label = Label
+                SubTab:SetBadge(Info.Badge)
+
+                Button.MouseEnter:Connect(function()
+                    if Tab.ActiveSubTab ~= SubTab then
+                        TweenService:Create(Label, Library.TweenInfo, { TextTransparency = 0.2 }):Play()
+                    end
+                end)
+                Button.MouseLeave:Connect(function()
+                    if Tab.ActiveSubTab ~= SubTab then
+                        TweenService:Create(Label, Library.TweenInfo, { TextTransparency = 0.4 }):Play()
+                    end
+                end)
+                Button.MouseButton1Click:Connect(SubTab.Show)
+
+                table.insert(Section.SubTabs, SubTab)
+                Tab.SubTabs[SubName] = SubTab
+                if not Tab.ActiveSubTab then
+                    SubTab:Show()
+                end
+
+                return SubTab
+            end
+
+            table.insert(Tab.SubTabSections, Section)
+            return Section
+        end
+
+        function Tab:AddSubTabSection(SectionName: string)
+            return CreateSection(SectionName)
+        end
+
+        function Tab:AddSubTab(...)
+            if not DefaultSection then
+                DefaultSection = CreateSection(nil)
+            end
+
+            return DefaultSection:AddSubTab(...)
         end
 
         function Tab:Hover(Hovering)
