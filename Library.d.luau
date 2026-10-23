@@ -847,23 +847,6 @@ export type Tab = {
     SetTooltip: (self: Tab, Text: string?) -> (),
 }
 
-export type KeyTab = BaseGroupbox & {
-    Elements: { [any]: any },
-    IsKeyTab: true,
-    Window: Window,
-    Container: ScrollingFrame,
-    Tooltip: string?,
-    TooltipTable: Tooltip?,
-
-    AddKeyBox: (self: KeyTab, ExpectedKey: string?, Callback: (Success: boolean, Key: string) -> ()) -> (),
-    Resize: (self: KeyTab) -> (),
-    Hover: (self: KeyTab, Hovering: boolean) -> (),
-    Show: (self: KeyTab) -> (),
-    Hide: (self: KeyTab) -> (),
-    SetVisible: (self: KeyTab, Visible: boolean) -> (),
-    SetTooltip: (self: KeyTab, Text: string?) -> (),
-}
-
 export type LoadingErrorButtonInfo = {
     Title: string?,
     Variant: "Primary" | "Secondary" | "Destructive" | "Ghost"?,
@@ -960,12 +943,6 @@ export type Window = {
         Description: string?,
         Order: number?
     ) -> Tab,
-    AddKeyTab: (
-        self: Window,
-        Info: { Name: string, Icon: string?, Description: string?, Tooltip: string?, Order: number? } | string,
-        Icon: string?,
-        Description: string?
-    ) -> KeyTab,
     AddDialog: (
         self: Window,
         Idx: string,
@@ -1019,7 +996,7 @@ export type Library = {
     LastSearchTab: Tab?,
     ActiveTab: Tab?,
     ActiveLoading: Loading?,
-    Tabs: { [string]: Tab | KeyTab },
+    Tabs: { [string]: Tab },
     DependencyBoxes: { [number]: DependencyBox | DependencyGroupbox },
     KeybindFrame: Frame?,
     KeybindContainer: Frame?,
@@ -1046,7 +1023,6 @@ export type Library = {
     Toggles: { [string | number]: Toggle },
     Options: { [string | number]: Option },
     NotifySide: "Right" | "Left",
-    ShowCustomCursor: boolean,
     ForceCheckbox: boolean,
     ShowToggleFrameInKeybinds: boolean,
     NotifyOnError: boolean,
@@ -1090,20 +1066,6 @@ export type Library = {
         Rotation: number?
     ) -> (),
     Validate: (self: Library, Table: { [string]: any }, Template: { [string]: any }) -> { [string]: any },
-    Cursor: {
-        ChangeCrossColor: (self: Library, Color: Color3) -> (),
-        ResetCross: (self: Library) -> (),
-        ChangeIcon: (self: Library, ImageId: string) -> (),
-        ChangeIconColor: (self: Library, Color: Color3) -> (),
-        ChangeIconSize: (self: Library, Size: UDim2) -> (),
-        ResetIcon: (self: Library) -> (),
-    },
-    ChangeCursorCrossColor: (self: Library, Color: Color3) -> (),
-    ResetCursorCross: (self: Library) -> (),
-    ChangeCursorIcon: (self: Library, ImageId: string) -> (),
-    ChangeCursorIconColor: (self: Library, Color: Color3) -> (),
-    ChangeCursorIconSize: (self: Library, Size: UDim2) -> (),
-    ResetCursorIcon: (self: Library) -> (),
     GetBetterColor: (self: Library, Color: Color3, Add: number) -> Color3,
     GetLighterColor: (self: Library, Color: Color3) -> Color3,
     GetDarkerColor: (self: Library, Color: Color3) -> Color3,
@@ -1221,7 +1183,6 @@ export type Library = {
             GlobalSearch: boolean?,
             CornerRadius: number?,
             NotifySide: "Left" | "Right"?,
-            ShowCustomCursor: boolean?,
             AlwaysOnTop: boolean?,
             Font: Font | Enum.Font?,
             ToggleKeybind: Enum.KeyCode?,

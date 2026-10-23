@@ -253,7 +253,6 @@ local Library = {
     ShowToggleFrameInKeybinds = true,
 
     NotifyOnError = false,
-    ShowCustomCursor = true,
     ForceCheckbox = false,
 
     CantDragForced = false,
@@ -395,8 +394,7 @@ local Templates = {
 
         CornerRadius = 4,
         NotifySide = "Right",
-        ShowCustomCursor = true,
-
+    
         Font = Enum.Font.Code,
         ToggleKeybind = Enum.KeyCode.RightControl,
 
@@ -1376,7 +1374,7 @@ function Library:UpdateSearch(SearchText)
 
     local TabsToSearch = {}
     for _, Tab in Library.Tabs do
-        if typeof(Tab) == "table" and not Tab.IsKeyTab then
+        if typeof(Tab) == "table" then
             table.insert(TabsToSearch, Tab)
         end
     end
@@ -1387,11 +1385,6 @@ function Library:UpdateSearch(SearchText)
 
     local Search = NormalizeSearch(SearchText:lower())
     if Trim(Search) == "" then
-        Library.Searching = false
-        Library.LastSearchTab = nil
-        return
-    end
-    if not Library.GlobalSearch and Library.ActiveTab and Library.ActiveTab.IsKeyTab then
         Library.Searching = false
         Library.LastSearchTab = nil
         return
@@ -1830,82 +1823,13 @@ local Overlay = New("Frame", {
 Library.Floats = Floats
 Library.Overlay = Overlay
 
---// Cursor
-local Cursor
-local CursorCross
-local InnerCross = {}
-local CursorCustomImage
-do
-    Cursor = New("Frame", {
-        AnchorPoint = Vector2.new(0.5, 0.5),
-        BackgroundTransparency = 1,
-        Size = UDim2.fromOffset(1, 1),
-        Visible = false,
-        ZIndex = 11000,
-        Parent = ScreenGui,
-    })
-
-    CursorCross = New("Frame", {
-        AnchorPoint = Vector2.new(0.5, 0.5),
-        BackgroundTransparency = 1,
-        Position = UDim2.fromScale(0.5, 0.5),
-        Size = UDim2.fromOffset(11, 11),
-        Parent = Cursor,
-    })
-
-    New("Frame", {
-        AnchorPoint = Vector2.new(0.5, 0.5),
-        BackgroundColor3 = "DarkColor",
-        Position = UDim2.fromScale(0.5, 0.5),
-        Size = UDim2.new(1, 0, 0, 3),
-        ZIndex = 1,
-        Parent = CursorCross,
-    })
-    table.insert(InnerCross, New("Frame", {
-        AnchorPoint = Vector2.new(0.5, 0.5),
-        BackgroundColor3 = "WhiteColor",
-        Position = UDim2.fromScale(0.5, 0.5),
-        Size = UDim2.new(1, -2, 0, 1),
-        ZIndex = 2,
-        Parent = CursorCross,
-    }))
-
-    New("Frame", {
-        AnchorPoint = Vector2.new(0.5, 0.5),
-        BackgroundColor3 = "DarkColor",
-        Position = UDim2.fromScale(0.5, 0.5),
-        Size = UDim2.new(0, 3, 1, 0),
-        ZIndex = 1,
-        Parent = CursorCross,
-    })
-    table.insert(InnerCross, New("Frame", {
-        AnchorPoint = Vector2.new(0.5, 0.5),
-        BackgroundColor3 = "WhiteColor",
-        Position = UDim2.fromScale(0.5, 0.5),
-        Size = UDim2.new(0, 1, 1, -2),
-        ZIndex = 2,
-        Parent = CursorCross,
-    }))
-
-    CursorCustomImage = New("ImageLabel", {
-        AnchorPoint = Vector2.new(0.5, 0.5),
-        BackgroundTransparency = 1,
-        Position = UDim2.fromScale(0.5, 0.5),
-        Size = UDim2.fromOffset(20, 20),
-        ZIndex = 3,
-        Visible = false,
-        Parent = Cursor,
-    })
-end
-
 local function RestoreMouseIcon()
-    pcall(function() 
+    pcall(function()
         RunService:UnbindFromRenderStep(Library.ShowCursorBinding)
         RunService.RenderStepped:Wait()
     end)
 
     UserInputService.MouseIconEnabled = Library.OriginalMouseIconEnabled
-    if Cursor then Cursor.Visible = false end
 end
 
 --// Notification \\--
@@ -1929,7 +1853,7 @@ do
 end
 
 --// Icons \\--
-local CheckIcon, ArrowIcon, ResizeIcon, KeyIcon, MoveIcon, PopOutIcon, CloseIcon, SettingsIcon
+local CheckIcon, ArrowIcon, ResizeIcon, MoveIcon, PopOutIcon, CloseIcon, SettingsIcon
 function Library:SetIconModule(module: IconModule)
     FetchIcons = true
     Icons = module
@@ -1937,7 +1861,6 @@ function Library:SetIconModule(module: IconModule)
     CheckIcon = Library:GetIcon("check")
     ArrowIcon = Library:GetIcon("chevron-up")
     ResizeIcon = Library:GetIcon("move-diagonal-2")
-    KeyIcon = Library:GetIcon("key")
     MoveIcon = Library:GetIcon("move")
     PopOutIcon = Library:GetIcon("square-arrow-down-left")
     CloseIcon = Library:GetIcon("x")
@@ -1967,95 +1890,6 @@ do
 end
 
 --// Lib Functions \\--
-Library.Cursor = {}
-
-function Library.Cursor:ResetCross()
-    for _, Inner in InnerCross do
-        Library.Registry[Inner].BackgroundColor3 = "WhiteColor"
-        Inner.BackgroundColor3 = Library.Scheme.WhiteColor
-    end
-end
-
-function Library.Cursor:ResetIcon()
-    CursorCross.Visible = true
-    CursorCustomImage.Visible = false
-    CursorCustomImage.ImageColor3 = Color3.new(1, 1, 1)
-    CursorCustomImage.Size = UDim2.fromOffset(20, 20)
-end
-
-function Library.Cursor:ResetCursor()
-    Library.Cursor:ResetCross()
-    Library.Cursor:ResetIcon()
-end
-
-function Library.Cursor:ChangeCrossColor(Color: Color3)
-    assert(typeof(Color) == "Color3", "Color3 expected.")
-    for _, Inner in InnerCross do
-        Inner.BackgroundColor3 = Color
-        Library.Registry[Inner].BackgroundColor3 = nil
-    end
-end
-
-function Library.Cursor:ChangeIcon(ImageId: string)
-    if not ImageId or ImageId == "" then
-        Library.Cursor:ResetIcon()
-        return
-    end
-
-    local Icon = Library:GetCustomIcon(ImageId)
-    assert(Icon, "Image must be a valid Roblox asset or a valid URL or a valid lucide icon.")
-
-    CursorCross.Visible = false
-    CursorCustomImage.Visible = true
-    Library:ApplyLucideIcon(CursorCustomImage, Icon)
-end
-
-function Library.Cursor:ChangeIconColor(Color: Color3)
-    assert(typeof(Color) == "Color3", "Color3 expected.")
-    CursorCustomImage.ImageColor3 = Color
-end
-
-function Library.Cursor:ChangeIconSize(Size: UDim2)
-    assert(typeof(Size) == "UDim2", "UDim2 expected.")
-    CursorCustomImage.Size = Size
-end
-
---// DEPRECATED
-function Library:ChangeCursorCrossColor(Color: Color3)
-    warn("Obsidian:ChangeCursorCrossColor is deprecated, please use Obsidian.Cursor:ChangeCrossColor instead.")
-    Library.Cursor:ChangeCrossColor(Color)
-end
-
---// DEPRECATED
-function Library:ResetCursorCross()
-    warn("Obsidian:ResetCursorCross is deprecated, please use Obsidian.Cursor:ResetCross instead.")
-    Library.Cursor:ResetCross()
-end
-
---// DEPRECATED
-function Library:ChangeCursorIcon(ImageId: string)
-    warn("Obsidian:ChangeCursorIcon is deprecated, please use Obsidian.Cursor:ChangeIcon instead.")
-    Library.Cursor:ChangeIcon(ImageId)
-end
-
---// DEPRECATED
-function Library:ChangeCursorIconColor(Color: Color3)
-    warn("Obsidian:ChangeCursorIconColor is deprecated, please use Obsidian.Cursor:ChangeIconColor instead.")
-    Library.Cursor:ChangeIconColor(Color)
-end
-
---// DEPRECATED
-function Library:ChangeCursorIconSize(Size: UDim2)
-    warn("Obsidian:ChangeCursorIconSize is deprecated, please use Obsidian.Cursor:ChangeIconSize instead.")
-    Library.Cursor:ChangeIconSize(Size)
-end
-
---// DEPRECATED
-function Library:ResetCursorIcon()
-    warn("Obsidian:ResetCursorIcon is deprecated, please use Obsidian.Cursor:ResetIcon instead.")
-    Library.Cursor:ResetIcon()
-end
-
 --// Colors \\--
 function Library:GetBetterColor(Color: Color3, Add: number): Color3
     Add = Add * (Library.IsLightTheme and -4 or 2)
@@ -4102,8 +3936,8 @@ function Library:AddTooltip(InfoStr: string, DisabledInfoStr: string, HoverInsta
 
         TooltipLabel.Text = TooltipTable.Disabled and DisabledInfoStr or InfoStr
         TooltipLabel.Position = UDim2.fromOffset(
-            Mouse.X + (Library.ShowCustomCursor and 8 or 14),
-            Mouse.Y + (Library.ShowCustomCursor and 8 or 12)
+            Mouse.X + 14,
+            Mouse.Y + 12
         )
         TooltipLabel.Visible = true
         UpdateTooltipSize(true)
@@ -4115,8 +3949,8 @@ function Library:AddTooltip(InfoStr: string, DisabledInfoStr: string, HoverInsta
             and not (CurrentMenu and Library:MouseIsOverFrame(CurrentMenu.Menu, Mouse))
         do
             TooltipLabel.Position = UDim2.fromOffset(
-                Mouse.X + (Library.ShowCustomCursor and 8 or 14),
-                Mouse.Y + (Library.ShowCustomCursor and 8 or 12)
+                Mouse.X + 14,
+                Mouse.Y + 12
             )
 
             RunService.RenderStepped:Wait()
@@ -6500,7 +6334,7 @@ do
             Text = Label.Text,
             TextSize = Data.Size,
             TextWrapped = Label.DoesWrap,
-            TextXAlignment = Groupbox.IsKeyTab and Enum.TextXAlignment.Center or Enum.TextXAlignment.Left,
+            TextXAlignment = Enum.TextXAlignment.Left,
             Visible = Label.Visible,
             Parent = Container,
         })
@@ -11045,7 +10879,6 @@ function Library:CreateWindow(WindowInfo)
 
     Library.CornerRadius = WindowInfo.CornerRadius
     Library:SetNotifySide(WindowInfo.NotifySide)
-    Library.ShowCustomCursor = WindowInfo.ShowCustomCursor
     Library.Scheme.Font = WindowInfo.Font
     Library.ToggleKeybind = WindowInfo.ToggleKeybind
     Library.GlobalSearch = WindowInfo.GlobalSearch
@@ -11947,10 +11780,6 @@ function Library:CreateWindow(WindowInfo)
         end
 
         for _, Tab in Library.Tabs do
-            if Tab.IsKeyTab then
-                continue
-            end
-
             for _, Tabbox in Tab.Tabboxes do
                 Tabbox:UpdateCorners()
             end
@@ -13458,409 +13287,6 @@ function Library:CreateWindow(WindowInfo)
         return Tab
     end
 
-    function Window:AddKeyTab(...)
-        local Name = nil
-        local Icon = nil
-        local Description = nil
-        local Tooltip = nil
-        local Order = nil
-
-        if select("#", ...) == 1 and typeof(...) == "table" then
-            local Info = select(1, ...)
-            Name = Info.Name or "Tab"
-            Icon = Info.Icon
-            Description = Info.Description
-            Tooltip = Info.Tooltip
-            Order = Info.Order
-        else
-            Name = select(1, ...) or "Tab"
-            Icon = select(2, ...)
-            Description = select(3, ...)
-            Order = select(4, ...)
-        end
-
-        if not tonumber(Order) then
-            Order = #Tabs:GetChildren()
-        end
-
-        Icon = Icon or "key"
-
-        local TabButton: TextButton
-        local TabIndicator
-        local TabLabel
-        local TabIcon
-
-        local TabContainer
-
-        Icon = if Icon == "key" then KeyIcon else Library:GetCustomIcon(Icon)
-        do
-            TabButton = New("TextButton", {
-                BackgroundColor3 = "MainColor",
-                BackgroundTransparency = 1,
-                Size = UDim2.new(1, 0, 0, 40),
-                Text = "",
-                LayoutOrder = Order,
-                Parent = Tabs,
-            })
-            New("UICorner", {
-                CornerRadius = UDim.new(0, TabButtonsStyle.CornerRadius),
-                Parent = TabButton,
-            })
-
-            if TabButtonsStyle.Indicator then
-                TabIndicator = New("Frame", {
-                    AnchorPoint = Vector2.new(1, 0.5),
-                    BackgroundColor3 = "AccentColor",
-                    BackgroundTransparency = 1,
-                    Position = UDim2.new(0, -2, 0.5, 0),
-                    Size = UDim2.fromOffset(TabButtonsStyle.IndicatorWidth, TabButtonsStyle.IndicatorHeight),
-                    Parent = TabButton,
-                })
-
-                New("UICorner", {
-                    CornerRadius = UDim.new(1, 0),
-                    Parent = TabIndicator,
-                })
-            end
-
-            local ButtonHolder = New("Frame", {
-                BackgroundTransparency = 1,
-                Size = UDim2.fromScale(1, 1),
-                Parent = TabButton,
-            })
-            local ButtonPadding = New("UIPadding", {
-                PaddingBottom = UDim.new(0, IsCompact and 6 or 11),
-                PaddingLeft = UDim.new(0, IsCompact and 6 or 12),
-                PaddingRight = UDim.new(0, IsCompact and 6 or 12),
-                PaddingTop = UDim.new(0, IsCompact and 6 or 11),
-                Parent = ButtonHolder,
-            })
-
-            TabLabel = New("TextLabel", {
-                BackgroundTransparency = 1,
-                Position = UDim2.fromOffset(30, 0),
-                Size = UDim2.new(1, -30, 1, 0),
-                Text = Name,
-                TextSize = 16,
-                TextTransparency = 0.5,
-                TextXAlignment = Enum.TextXAlignment.Left,
-                Visible = not IsCompact,
-                Parent = ButtonHolder,
-            })
-
-            if Icon then
-                TabIcon = New("ImageLabel", {
-                    ImageColor3 = Icon.Custom and "WhiteColor" or "AccentColor",
-                    ImageTransparency = 0.5,
-                    ScaleType = Enum.ScaleType.Fit,
-                    Size = UDim2.fromScale(1, 1),
-                    SizeConstraint = IsCompact and Enum.SizeConstraint.RelativeXY or Enum.SizeConstraint.RelativeYY,
-                    Parent = ButtonHolder,
-                })
-                Library:ApplyLucideIcon(TabIcon, Icon)
-            end
-
-            table.insert(Library.TabButtons, {
-                Label = TabLabel,
-                Padding = ButtonPadding,
-                Icon = TabIcon,
-            })
-
-            --// Tab Container \\--
-            TabContainer = New("ScrollingFrame", {
-                AutomaticCanvasSize = Enum.AutomaticSize.Y,
-                BackgroundTransparency = 1,
-                CanvasSize = UDim2.fromScale(0, 0),
-                ScrollBarThickness = 0,
-                Position = UDim2.fromScale(0, 0),
-                Size = UDim2.fromScale(1, 1),
-                Visible = false,
-                Parent = Container,
-            })
-            New("UIListLayout", {
-                HorizontalAlignment = Enum.HorizontalAlignment.Center,
-                Padding = UDim.new(0, 8),
-                VerticalAlignment = Enum.VerticalAlignment.Center,
-                Parent = TabContainer,
-            })
-            New("UIPadding", {
-                PaddingLeft = UDim.new(0, 1),
-                PaddingRight = UDim.new(0, 1),
-                Parent = TabContainer,
-            })
-        end
-
-        --// Tab Table \\--
-        local Tab = {
-            Description = Description,
-            IsKeyTab = true,
-
-            Tooltip = Tooltip,
-            TooltipTable = nil,
-
-            Elements = {},
-
-            Window = Window,
-            Button = TabButton,
-            Container = TabContainer
-        }
-
-        function Tab:AddKeyBox(Callback)
-            assert(typeof(Callback) == "function", "Callback must be a function")
-
-            local Holder = New("Frame", {
-                BackgroundTransparency = 1,
-                Size = UDim2.new(0.75, 0, 0, 21),
-                Parent = TabContainer,
-            })
-
-            local Box = New("TextBox", {
-                BackgroundColor3 = "MainColor",
-                PlaceholderText = "Key",
-                Size = UDim2.new(1, -71, 1, 0),
-                TextSize = 14,
-                TextXAlignment = Enum.TextXAlignment.Left,
-                Parent = Holder,
-            })
-            New("UIPadding", {
-                PaddingLeft = UDim.new(0, 8),
-                PaddingRight = UDim.new(0, 8),
-                Parent = Box,
-            })
-            local BoxStroke = New("UIStroke", {
-                Color = "OutlineColor",
-                Parent = Box,
-            })
-            table.insert(
-                Library.Corners,
-                New("UICorner", {
-                    CornerRadius = UDim.new(0, Library.CornerRadius / 2),
-                    Parent = Box,
-                })
-            )
-
-            Box.Focused:Connect(function()
-                Library.Registry[BoxStroke].Color = "AccentColor"
-                TweenService:Create(BoxStroke, Library.TweenInfo, {
-                    Color = Library.Scheme.AccentColor,
-                }):Play()
-            end)
-
-            Box.FocusLost:Connect(function()
-                Library.Registry[BoxStroke].Color = "OutlineColor"
-                TweenService:Create(BoxStroke, Library.TweenInfo, {
-                    Color = Library.Scheme.OutlineColor,
-                }):Play()
-            end)
-
-            local Button = New("TextButton", {
-                AnchorPoint = Vector2.new(1, 0),
-                BackgroundColor3 = "MainColor",
-                Position = UDim2.fromScale(1, 0),
-                Size = UDim2.new(0, 63, 1, 0),
-                Text = "Execute",
-                TextSize = 14,
-                TextTransparency = 0.4,
-                Parent = Holder,
-            })
-            New("UIStroke", {
-                Color = "OutlineColor",
-                Parent = Button,
-            })
-            table.insert(
-                Library.Corners,
-                New("UICorner", {
-                    CornerRadius = UDim.new(0, Library.CornerRadius / 2),
-                    Parent = Button,
-                })
-            )
-
-            Button.MouseEnter:Connect(function()
-                TweenService:Create(Button, Library.TweenInfo, {
-                    TextTransparency = 0,
-                }):Play()
-            end)
-
-            Button.MouseLeave:Connect(function()
-                TweenService:Create(Button, Library.TweenInfo, {
-                    TextTransparency = 0.4,
-                }):Play()
-            end)
-
-            Button.InputBegan:Connect(function(Input)
-                if not IsClickInput(Input) then
-                    return
-                end
-
-                if not Library:MouseIsOverFrame(Button, Input.Position) then
-                    return
-                end
-
-                Callback(Box.Text)
-            end)
-        end
-
-        function Tab:Destroy()
-            if TabContainer then
-                TabContainer:Destroy()
-            end
-
-            if TabButton then
-                for Index, Entry in Library.TabButtons do
-                    if typeof(Entry) == "table" and Entry.Button == TabButton then
-                        table.remove(Library.TabButtons, Index)
-                        break
-                    end
-                end
-
-                TabButton:Destroy()
-            end
-
-            Library.Tabs[Name] = nil
-        end
-
-        function Tab:SetOrder(NewOrder: number)
-            Order = NewOrder
-            TabButton.LayoutOrder = Order
-        end
-
-        function Tab:RefreshSides() end
-        function Tab:Resize() end
-        function Tab:UpdateCorners() end
-
-        function Tab:Hover(Hovering)
-            if Library.ActiveTab == Tab then
-                return
-            end
-
-            TweenService:Create(TabLabel, Library.TweenInfo, {
-                TextTransparency = Hovering and 0.25 or 0.5,
-            }):Play()
-            if TabIcon then
-                TweenService:Create(TabIcon, Library.TweenInfo, {
-                    ImageTransparency = Hovering and 0.25 or 0.5,
-                }):Play()
-            end
-        end
-
-        function Tab:Show()
-            if Library.ActiveTab == Tab then
-                return
-            end
-
-            if Library.ActiveTab then
-                Library.ActiveTab:Hide()
-            end
-
-            TweenService:Create(TabButton, Library.TweenInfo, {
-                BackgroundTransparency = 0,
-            }):Play()
-
-            if TabIndicator then
-                TweenService:Create(TabIndicator, Library.TweenInfo, {
-                    BackgroundTransparency = 0,
-                }):Play()
-            end
-
-            TweenService:Create(TabLabel, Library.TweenInfo, {
-                TextTransparency = 0,
-            }):Play()
-
-            if TabIcon then
-                TweenService:Create(TabIcon, Library.TweenInfo, {
-                    ImageTransparency = 0,
-                }):Play()
-            end
-
-            Library:PlayTabAnimation(Tab, true)
-
-            if Description then
-                Window:ShowTabInfo(Name, Description)
-            end
-
-            Tab:RefreshSides()
-
-            Library.ActiveTab = Tab
-
-            if Library.Searching then
-                Library:UpdateSearch(Library.SearchText)
-            end
-        end
-
-        function Tab:Hide()
-            TweenService:Create(TabButton, Library.TweenInfo, {
-                BackgroundTransparency = 1,
-            }):Play()
-
-            if TabIndicator then
-                TweenService:Create(TabIndicator, Library.TweenInfo, {
-                    BackgroundTransparency = 1,
-                }):Play()
-            end
-
-            TweenService:Create(TabLabel, Library.TweenInfo, {
-                TextTransparency = 0.5,
-            }):Play()
-
-            if TabIcon then
-                TweenService:Create(TabIcon, Library.TweenInfo, {
-                    ImageTransparency = 0.5,
-                }):Play()
-            end
-
-            Library:PlayTabAnimation(Tab, false)
-            Window:HideTabInfo()
-
-            Library.PreviousTab = Tab
-            Library.ActiveTab = nil
-        end
-
-        function Tab:SetVisible(Visible: boolean)
-            TabButton.Visible = Visible
-
-            if not Visible and Library.ActiveTab == Tab then
-                Tab:Hide()
-            end
-        end
-
-        function Tab:SetTooltip(Text: string?)
-            Tab.Tooltip = Text
-
-            if Tab.TooltipTable then
-                Tab.TooltipTable:Destroy()
-                Tab.TooltipTable = nil
-            end
-
-            if typeof(Text) == "string" then
-                Tab.TooltipTable = Library:AddTooltip(Text, nil, TabButton)
-            end
-        end
-
-        --// Execution \\--
-        if typeof(Tooltip) == "string" then
-            Tab.TooltipTable = Library:AddTooltip(Tooltip, nil, TabButton)
-        end
-
-        if not Library.ActiveTab then
-            Tab:Show()
-        end
-
-        TabButton.MouseEnter:Connect(function()
-            Tab:Hover(true)
-        end)
-        TabButton.MouseLeave:Connect(function()
-            Tab:Hover(false)
-        end)
-        TabButton.MouseButton1Click:Connect(Tab.Show)
-
-        Tab.Container = TabContainer
-        setmetatable(Tab, BaseGroupbox)
-
-        Library.Tabs[Name] = Tab
-
-        return Tab
-    end
-
     function Window:AddDialog(Idx, Info)
         Info = Library:Validate(Info, Templates.Dialog)
 
@@ -14436,10 +13862,7 @@ function Library:CreateWindow(WindowInfo)
 
             pcall(function() RunService:UnbindFromRenderStep(ShowCursorBinding) end)
             RunService:BindToRenderStep(ShowCursorBinding, Enum.RenderPriority.Last.Value, function()
-                UserInputService.MouseIconEnabled = not Library.ShowCustomCursor
-
-                Cursor.Position = UDim2.fromOffset(Mouse.X, Mouse.Y)
-                Cursor.Visible = Library.ShowCustomCursor
+                UserInputService.MouseIconEnabled = true
 
                 if Library.Unloaded == true or not (Library.Toggled and ScreenGui and ScreenGui.Parent) then
                     RestoreMouseIcon()
