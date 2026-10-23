@@ -172,6 +172,7 @@ export type DropdownInfo = {
     ValueImages: { [any]: string }?,
     Multi: boolean?,
     DragSelect: boolean?,
+    SelectAll: boolean?,
     MaxVisibleDropdownItems: number?,
     KeepDisabledValuePosition: boolean?,
     SpecialType: "Player" | "Team"?,

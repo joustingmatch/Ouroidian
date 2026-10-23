@@ -546,6 +546,7 @@ local Templates = {
 
         Multi = false,
         DragSelect = false,
+        SelectAll = true,
         MaxVisibleDropdownItems = 8,
         KeepDisabledValuePosition = false,
 
@@ -933,86 +934,6 @@ function Library:UpdateAddons(Parent)
     end
 end
 
-local function CheckDepbox(Box, Search, ForceVisible: boolean?)
-    local VisibleElements = 0
-    local BestScore = 0
-
-    for _, ElementInfo in Box.Elements do
-        if ElementInfo.Type == "Divider" then
-            ElementInfo.Holder.Visible = false
-            continue
-        elseif ElementInfo.SubButton then
-            --// Check if any of the Buttons Name matches with Search
-            local Visible = false
-
-            --// Check if Search matches Element's Name and if Element is Visible
-            if MatchesSearch(ElementInfo, Search, ForceVisible) and ElementInfo.Visible then
-                Visible = true
-                BestScore = math.max(BestScore, FuzzyMatchScore(ElementInfo.Text, Search))
-            else
-                ElementInfo.Base.Visible = false
-            end
-            if MatchesSearch(ElementInfo.SubButton, Search, ForceVisible) and ElementInfo.SubButton.Visible then
-                Visible = true
-                BestScore = math.max(BestScore, FuzzyMatchScore(ElementInfo.SubButton.Text, Search))
-            else
-                ElementInfo.SubButton.Base.Visible = false
-            end
-            ElementInfo.Holder.Visible = Visible
-            if Visible then
-                VisibleElements += 1
-            end
-
-            continue
-        end
-
-        --// Check if Search matches Element's Name and if Element is Visible
-        if ElementInfo.Text and MatchesSearch(ElementInfo, Search, ForceVisible) and ElementInfo.Visible then
-            ElementInfo.Holder.Visible = true
-            VisibleElements += 1
-            BestScore = math.max(BestScore, FuzzyMatchScore(ElementInfo.Text, Search))
-        else
-            ElementInfo.Holder.Visible = false
-        end
-    end
-
-    for _, Depbox in Box.DependencyBoxes do
-        if not Depbox.Visible then
-            continue
-        end
-
-        local DepVisible, DepScore = CheckDepbox(Depbox, Search, ForceVisible)
-        VisibleElements += DepVisible
-        if DepScore > BestScore then
-            BestScore = DepScore
-        end
-    end
-
-    Box.Holder.Visible = VisibleElements > 0
-    return VisibleElements, BestScore
-end
-local function RestoreDepbox(Box)
-    for _, ElementInfo in Box.Elements do
-        ElementInfo.Holder.Visible = ElementInfo.Visible ~= false
-
-        if ElementInfo.SubButton then
-            ElementInfo.Base.Visible = ElementInfo.Visible
-            ElementInfo.SubButton.Base.Visible = ElementInfo.SubButton.Visible
-        end
-    end
-
-    Box:Resize()
-    Box.Holder.Visible = true
-
-    for _, Depbox in Box.DependencyBoxes do
-        if not Depbox.Visible then
-            continue
-        end
-
-        RestoreDepbox(Depbox)
-    end
-end
-
 --// Pop Out
 function SyncPopOutVisibility(Box: any)
     if not Box.PopOutFloat then
@@ -1126,323 +1047,209 @@ local function GetPopOutBodyMaxHeight(Box: any, Reserved: number): number
 end
 
 --// Search
-local function ApplySearchToTab(Tab, Search)
-    if not Tab then
-        return false, 0
+local MaxSearchResults = 50
+
+local function StripRichText(Text: string): string
+    return (Text:gsub("<[^>]+>", ""))
+end
+
+--// Outer-to-inner list of containers that must be opened to reach a box \\--
+local function GetBoxChain(Box)
+    local Chain
+    if Box.Type == "SubTab" then
+        local Tabbox = Box.Tabbox
+        Chain = if Tabbox.ParentBox then GetBoxChain(Tabbox.ParentBox) elseif Tabbox.Page then { Tabbox.Page } else {}
+    else
+        Chain = if Box.Page then { Box.Page } else {}
     end
 
-    local HasVisible = false
-    local BestScore = 0
+    table.insert(Chain, Box)
+    return Chain
+end
 
-    --// If the Tab itself matches Search (by name/description), don't filter out its contents -- pull everything in the Tab along with it \\--
-    local TabMatches = TryFuzzyMatch(Tab.Name, Search) or TryFuzzyMatch(Tab.Description, Search)
-    BestScore = math.max(BestScore, FuzzyMatchScore(Tab.Name, Search), FuzzyMatchScore(Tab.Description, Search))
+local function IsBoxChainVisible(Chain): boolean
+    for _, Step in Chain do
+        if Step.Type == "Groupbox" and Step.Visible == false then
+            return false
+        elseif Step.Type == "SubTab" and Step.Tabbox.Visible == false then
+            return false
+        end
+    end
 
-    for _, Groupbox in Tab.Groupboxes do
-        if Groupbox.Visible == false then
+    return true
+end
+
+local function CollectSearchResults(Search: string)
+    local Results = {}
+
+    local function AddElements(Elements, DependencyBoxes, Info, ContainerScore)
+        for _, ElementInfo in Elements do
+            if ElementInfo.Type == "Divider" then
+                continue
+            end
+
+            local Candidates = { ElementInfo }
+            if ElementInfo.SubButton then
+                table.insert(Candidates, ElementInfo.SubButton)
+            end
+
+            for _, Candidate in Candidates do
+                if Candidate.Visible == false or typeof(Candidate.Text) ~= "string" or Trim(Candidate.Text) == "" then
+                    continue
+                end
+
+                --// Matching a container's name (tab, groupbox...) pulls in everything inside it, ranked below direct hits \\--
+                local Score = FuzzyMatchScore(Candidate.Text, Search)
+                if Score <= 0 then
+                    if MatchesSearch(Candidate, Search) then
+                        Score = 1
+                    elseif ContainerScore > 0 then
+                        Score = ContainerScore * 0.01
+                    else
+                        continue
+                    end
+                end
+
+                table.insert(Results, {
+                    Text = StripRichText(Candidate.Text),
+                    Tab = Info.Tab,
+                    Chain = Info.Chain,
+                    Target = if Candidate == ElementInfo then ElementInfo.Holder else Candidate.Base,
+                    Score = Score,
+                    TabOrder = Info.Tab.Button and Info.Tab.Button.LayoutOrder or 0,
+                    Order = #Results + 1,
+                })
+            end
+        end
+
+        for _, Depbox in DependencyBoxes do
+            if Depbox.Visible then
+                AddElements(Depbox.Elements, Depbox.DependencyBoxes, Info, ContainerScore)
+            end
+        end
+    end
+
+    local function ScanBox(Tab, Box, TabScore)
+        local Chain = GetBoxChain(Box)
+        if not IsBoxChainVisible(Chain) then
+            return
+        end
+
+        local ContainerScore = TabScore
+        for _, Step in Chain do
+            ContainerScore = math.max(ContainerScore, FuzzyMatchScore(Step.Name, Search))
+        end
+
+        AddElements(Box.Elements, Box.DependencyBoxes, { Tab = Tab, Chain = Chain }, ContainerScore)
+    end
+
+    for _, Tab in Library.Tabs do
+        if typeof(Tab) ~= "table" or Tab.Destroyed or (Tab.Button and not Tab.Button.Visible) then
             continue
         end
 
-        --// Optional: matching the Groupbox's own name/description reveals every element inside it, without needing each one to match too
-        local GroupboxMatches = TabMatches or (TryFuzzyMatch(Groupbox.Name, Search) or TryFuzzyMatch(Groupbox.Description, Search))
-        BestScore = math.max(BestScore, FuzzyMatchScore(Groupbox.Name, Search), FuzzyMatchScore(Groupbox.Description, Search))
+        local TabScore = math.max(FuzzyMatchScore(Tab.Name, Search), FuzzyMatchScore(Tab.Description, Search))
 
-        local VisibleElements = 0
-        for _, ElementInfo in Groupbox.Elements do
-            if ElementInfo.Type == "Divider" then
-                ElementInfo.Holder.Visible = false
-                continue
-            elseif ElementInfo.SubButton then
-                --// Check if any of the Buttons Name matches with Search
-                local Visible = false
-                if MatchesSearch(ElementInfo, Search, GroupboxMatches) and ElementInfo.Visible then
-                    Visible = true
-                    BestScore = math.max(BestScore, FuzzyMatchScore(ElementInfo.Text, Search))
-                else
-                    ElementInfo.Base.Visible = false
-                end
-
-                if MatchesSearch(ElementInfo.SubButton, Search, GroupboxMatches) and ElementInfo.SubButton.Visible then
-                    Visible = true
-                    BestScore = math.max(BestScore, FuzzyMatchScore(ElementInfo.SubButton.Text, Search))
-                else
-                    ElementInfo.SubButton.Base.Visible = false
-                end
-
-                ElementInfo.Holder.Visible = Visible
-                if Visible then
-                    VisibleElements += 1
-                end
-
-                continue
-            end
-
-            --// Check if Search matches Element's Name and if Element is Visible
-            if ElementInfo.Text and MatchesSearch(ElementInfo, Search, GroupboxMatches) and ElementInfo.Visible then
-                ElementInfo.Holder.Visible = true
-                VisibleElements += 1
-                BestScore = math.max(BestScore, FuzzyMatchScore(ElementInfo.Text, Search))
-            else
-                ElementInfo.Holder.Visible = false
-            end
+        for _, Groupbox in Tab.Groupboxes do
+            ScanBox(Tab, Groupbox, TabScore)
         end
 
-        for _, Depbox in Groupbox.DependencyBoxes do
-            if not Depbox.Visible then
-                continue
-            end
-
-            local DepVisible, DepScore = CheckDepbox(Depbox, Search, GroupboxMatches)
-            VisibleElements += DepVisible
-            if DepScore > BestScore then
-                BestScore = DepScore
+        for _, Tabbox in Tab.Tabboxes do
+            for _, SubTab in Tabbox.Tabs do
+                ScanBox(Tab, SubTab, TabScore)
             end
         end
-
-        --// Update Groupbox Size and Visibility if found any element
-        if VisibleElements > 0 then
-            Groupbox:Resize()
-            HasVisible = true
-        end
-        Groupbox.BoxHolder.Visible = VisibleElements > 0
-        SyncPopOutVisibility(Groupbox)
     end
 
-    for _, Tabbox in Tab.Tabboxes do
-        local VisibleTabs = 0
-        local VisibleElements = {}
-        local SubTabScores = {}
-
-        for _, SubTab in Tabbox.Tabs do
-            VisibleElements[SubTab] = 0
-
-            --// Optional: matching a Tabbox sub-tab's own name reveals every element inside it, without needing each one to match too
-            local SubTabMatches = TabMatches or TryFuzzyMatch(SubTab.Name, Search)
-            local SubScore = FuzzyMatchScore(SubTab.Name, Search)
-            BestScore = math.max(BestScore, SubScore)
-
-            for _, ElementInfo in SubTab.Elements do
-                if ElementInfo.Type == "Divider" then
-                    ElementInfo.Holder.Visible = false
-                    continue
-                elseif ElementInfo.SubButton then
-                    --// Check if any of the Buttons Name matches with Search
-                    local Visible = false
-                    if MatchesSearch(ElementInfo, Search, SubTabMatches) and ElementInfo.Visible then
-                        Visible = true
-                        local ElementScore = FuzzyMatchScore(ElementInfo.Text, Search)
-                        SubScore = math.max(SubScore, ElementScore)
-                        BestScore = math.max(BestScore, ElementScore)
-                    else
-                        ElementInfo.Base.Visible = false
-                    end
-
-                    if MatchesSearch(ElementInfo.SubButton, Search, SubTabMatches) and ElementInfo.SubButton.Visible then
-                        Visible = true
-                        local ElementScore = FuzzyMatchScore(ElementInfo.SubButton.Text, Search)
-                        SubScore = math.max(SubScore, ElementScore)
-                        BestScore = math.max(BestScore, ElementScore)
-                    else
-                        ElementInfo.SubButton.Base.Visible = false
-                    end
-
-                    ElementInfo.Holder.Visible = Visible
-                    if Visible then
-                        VisibleElements[SubTab] += 1
-                    end
-
-                    continue
-                end
-
-                --// Check if Search matches Element's Name and if Element is Visible
-                if ElementInfo.Text and MatchesSearch(ElementInfo, Search, SubTabMatches) and ElementInfo.Visible then
-                    ElementInfo.Holder.Visible = true
-                    VisibleElements[SubTab] += 1
-                    local ElementScore = FuzzyMatchScore(ElementInfo.Text, Search)
-                    SubScore = math.max(SubScore, ElementScore)
-                    BestScore = math.max(BestScore, ElementScore)
-                else
-                    ElementInfo.Holder.Visible = false
-                end
-            end
-
-            for _, Depbox in SubTab.DependencyBoxes do
-                if not Depbox.Visible then
-                    continue
-                end
-
-                local DepVisible, DepScore = CheckDepbox(Depbox, Search, SubTabMatches)
-                VisibleElements[SubTab] += DepVisible
-                SubScore = math.max(SubScore, DepScore)
-                BestScore = math.max(BestScore, DepScore)
-            end
-
-            SubTabScores[SubTab] = SubScore
+    table.sort(Results, function(A, B)
+        if A.Score ~= B.Score then
+            return A.Score > B.Score
         end
-
-        local BestSubTab = nil
-        local BestSubScore = -1
-
-        for SubTab, Visible in VisibleElements do
-            SubTab.ButtonHolder.Visible = Visible > 0
-            if Visible > 0 then
-                VisibleTabs += 1
-                HasVisible = true
-
-                local SubScore = SubTabScores[SubTab] or 0
-                if SubScore > BestSubScore then
-                    BestSubScore = SubScore
-                    BestSubTab = SubTab
-                end
-            end
+        if A.TabOrder ~= B.TabOrder then
+            return A.TabOrder < B.TabOrder
         end
+        return A.Order < B.Order
+    end)
 
-        local ActiveSubTab = Tabbox.ActiveTab
-        local ActiveSubVisible = ActiveSubTab and (VisibleElements[ActiveSubTab] or 0) > 0
-        local ActiveSubScore = ActiveSubTab and (SubTabScores[ActiveSubTab] or -1) or -1
-
-        if ActiveSubVisible and ActiveSubScore >= BestSubScore then
-            ActiveSubTab:Resize()
-        elseif BestSubTab then
-            BestSubTab:Show()
-        end
-
-        --// Update Tabbox Visibility if any visible
-        Tabbox.BoxHolder.Visible = VisibleTabs > 0
-        SyncPopOutVisibility(Tabbox)
+    for Index = #Results, MaxSearchResults + 1, -1 do
+        Results[Index] = nil
     end
 
-    return HasVisible, BestScore
+    return Results
 end
-local function ResetTab(Tab)
-    if not Tab then
+
+--// Opens every container leading to a result, scrolls it into view and flashes it \\--
+local function RevealSearchResult(Result)
+    local Tab = Result.Tab
+    if Library.ActiveTab ~= Tab then
+        Tab:Show()
+    end
+
+    for _, Step in Result.Chain do
+        if Step.IsSubTab then
+            Step:Show()
+        elseif Step.Type == "SubTab" then
+            if Step.Tabbox.ActiveTab ~= Step then
+                Step:Show()
+            end
+        elseif Step.Type == "Groupbox" and Step.Collapsed then
+            Step:SetCollapsed(false)
+        end
+    end
+
+    local Target = Result.Target
+    if not Target or not Target.Parent then
         return
     end
 
-    for _, Groupbox in Tab.Groupboxes do
-        for _, ElementInfo in Groupbox.Elements do
-            ElementInfo.Holder.Visible = ElementInfo.Visible ~= false
-
-            if ElementInfo.SubButton then
-                ElementInfo.Base.Visible = ElementInfo.Visible
-                ElementInfo.SubButton.Base.Visible = ElementInfo.SubButton.Visible
-            end
+    task.delay(0.05, function()
+        if Library.Unloaded or not Target.Parent then
+            return
         end
 
-        for _, Depbox in Groupbox.DependencyBoxes do
-            if not Depbox.Visible then
-                continue
-            end
-
-            RestoreDepbox(Depbox)
+        local Side = Target.Parent
+        while Side and not table.find(Tab.Sides, Side) do
+            Side = Side.Parent
         end
 
-        Groupbox:Resize()
-        Groupbox.BoxHolder.Visible = Groupbox.Visible ~= false
-        SyncPopOutVisibility(Groupbox)
-    end
+        if Side then
+            local Offset = Target.AbsolutePosition.Y - Side.AbsolutePosition.Y + Side.CanvasPosition.Y
+            local Centered = Offset - (Side.AbsoluteSize.Y - Target.AbsoluteSize.Y) / 2
+            local MaxScroll = math.max(0, Side.AbsoluteCanvasSize.Y - Side.AbsoluteWindowSize.Y)
 
-    for _, Tabbox in Tab.Tabboxes do
-        for _, SubTab in Tabbox.Tabs do
-            for _, ElementInfo in SubTab.Elements do
-                ElementInfo.Holder.Visible = ElementInfo.Visible ~= false
-
-                if ElementInfo.SubButton then
-                    ElementInfo.Base.Visible = ElementInfo.Visible
-                    ElementInfo.SubButton.Base.Visible = ElementInfo.SubButton.Visible
-                end
-            end
-
-            for _, Depbox in SubTab.DependencyBoxes do
-                if not Depbox.Visible then
-                    continue
-                end
-
-                RestoreDepbox(Depbox)
-            end
-
-            SubTab.ButtonHolder.Visible = true
+            Side.CanvasPosition = Vector2.new(0, math.clamp(Centered, 0, MaxScroll))
         end
 
-        if Tabbox.ActiveTab then
-            Tabbox.ActiveTab:Resize()
-        end
-        Tabbox.BoxHolder.Visible = true
-        SyncPopOutVisibility(Tabbox)
-    end
+        local Flash = New("Frame", {
+            BackgroundColor3 = "AccentColor",
+            BackgroundTransparency = 0.7,
+            Position = UDim2.fromOffset(Target.AbsolutePosition.X, Target.AbsolutePosition.Y),
+            Size = UDim2.fromOffset(Target.AbsoluteSize.X, Target.AbsoluteSize.Y),
+            Parent = Library.Overlay,
+        })
+        Library:RemoveFromRegistry(Flash)
+        New("UICorner", {
+            CornerRadius = UDim.new(0, Library.CornerRadius / 2),
+            Parent = Flash,
+        })
+
+        local Tween = TweenService:Create(Flash, TweenInfo.new(0.9, Enum.EasingStyle.Quad, Enum.EasingDirection.In), {
+            BackgroundTransparency = 1,
+        })
+        Tween.Completed:Once(function()
+            Flash:Destroy()
+        end)
+        Tween:Play()
+    end)
 end
 
 function Library:UpdateSearch(SearchText)
     Library.SearchText = SearchText
 
-    local TabsToSearch = {}
-    for _, Tab in Library.Tabs do
-        if typeof(Tab) == "table" then
-            table.insert(TabsToSearch, Tab)
-        end
+    if Library.SearchResultsHandler then
+        local Search = NormalizeSearch(SearchText:lower())
+        Library.SearchResultsHandler(if Search == "" then {} else CollectSearchResults(Search))
     end
-
-    for _, Tab in TabsToSearch do
-        ResetTab(Tab)
-    end
-
-    local Search = NormalizeSearch(SearchText:lower())
-    if Trim(Search) == "" then
-        Library.Searching = false
-        Library.LastSearchTab = nil
-        return
-    end
-
-    Library.Searching = true
-
-    local BestTab = nil
-    local BestScore = -1
-    local ActiveScore = -1
-    local ActiveHasVisible = false
-
-    for _, Tab in TabsToSearch do
-        local HasVisible, Score = ApplySearchToTab(Tab, Search)
-        if not HasVisible then
-            continue
-        end
-
-        if Tab == Library.ActiveTab then
-            ActiveHasVisible = true
-            ActiveScore = Score
-        end
-        if Score > BestScore then
-            BestScore = Score
-            BestTab = Tab
-        end
-    end
-
-    if not Library.GlobalSearch then
-        for _, Tab in TabsToSearch do
-            if Tab ~= BestTab then
-                ResetTab(Tab)
-            end
-        end
-    end
-
-    local StayOnActive = ActiveHasVisible and ActiveScore >= BestScore
-    if StayOnActive and Library.ActiveTab then
-        Library.ActiveTab:RefreshSides()
-    elseif BestTab then
-        local SearchMarker = SearchText
-        task.defer(function()
-            if Library.SearchText ~= SearchMarker then
-                return
-            end
-
-            if Library.ActiveTab ~= BestTab then
-                BestTab:Show()
-            elseif Library.ActiveTab then
-                Library.ActiveTab:RefreshSides()
-            end
-        end)
-    end
-
-    Library.LastSearchTab = nil
 end
 
 function Library:AddToRegistry(Instance, Properties)
@@ -8606,6 +8413,17 @@ do
 
             table.clear(FilteredEntries)
 
+            --// Multi dropdowns get a Select All / Deselect All row on top,
+            --// acting on whatever enabled values the search currently shows \\--
+            if Info.Multi and Info.SelectAll ~= false then
+                for _, Entry in Pending do
+                    if not Entry.IsDisabled then
+                        table.insert(FilteredEntries, { IsToggleAll = true, FormattedValue = "Select All" })
+                        break
+                    end
+                end
+            end
+
             if Dropdown.KeepDisabledValuePosition then
                 for _, Entry in Pending do
                     table.insert(FilteredEntries, Entry)
@@ -8709,11 +8527,44 @@ do
             end
         end
 
+        local function AllShownSelected()
+            local Any = false
+            for _, Entry in FilteredEntries do
+                if not Entry.IsToggleAll and not Entry.IsDisabled then
+                    if not Dropdown.Value[Entry.Value] then
+                        return false
+                    end
+                    Any = true
+                end
+            end
+            return Any
+        end
+
+        local function ToggleAllShown()
+            local Select = not AllShownSelected()
+
+            for _, Entry in FilteredEntries do
+                if not Entry.IsToggleAll and not Entry.IsDisabled then
+                    Dropdown.Value[Entry.Value] = Select or nil
+                end
+            end
+
+            --// Without AllowNull, keep the first shown value selected \\--
+            if not Select and not Info.AllowNull and next(Dropdown.Value) == nil then
+                for _, Entry in FilteredEntries do
+                    if not Entry.IsToggleAll and not Entry.IsDisabled then
+                        Dropdown.Value[Entry.Value] = true
+                        break
+                    end
+                end
+            end
+        end
+
         local DragActiveCount = 0
 
         local function ApplyDragIndex(Index, InRange)
             local Entry = FilteredEntries[Index]
-            if not Entry or Entry.IsDisabled then
+            if not Entry or Entry.IsDisabled or Entry.IsToggleAll then
                 return
             end
 
@@ -8836,6 +8687,14 @@ do
                     return
                 end
 
+                if Entry.IsToggleAll then
+                    Button.Text = AllShownSelected() and "Deselect All" or "Select All"
+                    Row.Selected = false
+                    Container.BackgroundTransparency = 1
+                    Button.TextTransparency = 0.5
+                    return
+                end
+
                 local Selected
                 if Info.Multi then
                     Selected = Dropdown.Value[Entry.Value]
@@ -8856,6 +8715,19 @@ do
             table.insert(Dropdown.Connections, Button.MouseButton1Click:Connect(function()
                 local Entry = Row.Entry
                 if not Entry or Entry.IsDisabled or DragSelecting then
+                    return
+                end
+
+                if Entry.IsToggleAll then
+                    ToggleAllShown()
+
+                    for _, OtherRow in Pool do
+                        OtherRow:UpdateButton()
+                    end
+                    Dropdown:Display()
+
+                    Library:UpdateDependencyBoxes()
+                    Dropdown:RunChanged()
                     return
                 end
 
@@ -8941,7 +8813,7 @@ do
                 end
 
                 local Entry = Row.Entry
-                if not Entry or Entry.IsDisabled then
+                if not Entry or Entry.IsDisabled or Entry.IsToggleAll then
                     return
                 end
 
@@ -8954,6 +8826,9 @@ do
                 table.clear(DragInitialValues)
 
                 for _, FilteredEntry in FilteredEntries do
+                    if FilteredEntry.IsToggleAll then
+                        continue
+                    end
                     DragInitialValues[FilteredEntry.Value] = Dropdown.Value[FilteredEntry.Value]
                 end
 
@@ -11487,6 +11362,237 @@ function Library:CreateWindow(WindowInfo)
             Library:ApplyLucideIcon(SearchIconImage, SearchIcon)
         end
 
+        --// Search Results \\--
+        local ResultHeight = 32
+        local ResultPadding = 6
+        local MaxVisibleResults = 8
+        local SearchResultsList = {}
+
+        local SearchResults = New("ScrollingFrame", {
+            AnchorPoint = Vector2.new(1, 0),
+            AutomaticCanvasSize = Enum.AutomaticSize.Y,
+            BackgroundColor3 = "BackgroundColor",
+            CanvasSize = UDim2.fromScale(0, 0),
+            ScrollBarImageColor3 = "OutlineColor",
+            ScrollBarThickness = 2,
+            Visible = false,
+            Parent = Overlay,
+        })
+        table.insert(Library.Scales, New("UIScale", {
+            Scale = Library.DPIScale,
+            Parent = SearchResults,
+        }))
+        table.insert(Library.Corners, New("UICorner", {
+            CornerRadius = UDim.new(0, WindowInfo.CornerRadius),
+            Parent = SearchResults,
+        }))
+        New("UIStroke", {
+            Color = "OutlineColor",
+            Parent = SearchResults,
+        })
+        New("UIListLayout", {
+            Padding = UDim.new(0, ResultPadding),
+            SortOrder = Enum.SortOrder.LayoutOrder,
+            Parent = SearchResults,
+        })
+        New("UIPadding", {
+            PaddingBottom = UDim.new(0, ResultPadding),
+            PaddingLeft = UDim.new(0, ResultPadding),
+            PaddingRight = UDim.new(0, ResultPadding),
+            PaddingTop = UDim.new(0, ResultPadding),
+            Parent = SearchResults,
+        })
+
+        local function PlaceSearchResults()
+            local Width = math.max(SearchBox.AbsoluteSize.X / Library.DPIScale, 420)
+            local Count = math.min(#SearchResultsList, MaxVisibleResults)
+
+            SearchResults.Position = UDim2.fromOffset(
+                math.floor(SearchBox.AbsolutePosition.X + SearchBox.AbsoluteSize.X),
+                math.floor(SearchBox.AbsolutePosition.Y + SearchBox.AbsoluteSize.Y + 4 * Library.DPIScale)
+            )
+            SearchResults.Size = UDim2.fromOffset(Width, Count * (ResultHeight + ResultPadding) + ResultPadding)
+        end
+
+        local function ClearSearchRows()
+            for _, Child in SearchResults:GetChildren() do
+                if Child:IsA("TextButton") then
+                    for _, Descendant in Child:GetDescendants() do
+                        Library:RemoveFromRegistry(Descendant)
+                    end
+                    Library:RemoveFromRegistry(Child)
+                    Child:Destroy()
+                end
+            end
+        end
+
+        local function HideSearchResults()
+            SearchResults.Visible = false
+        end
+        Library.HideSearchResults = HideSearchResults
+
+        local function OpenSearchResult(Result)
+            HideSearchResults()
+            SearchBox.Text = ""
+            SearchBox:ReleaseFocus()
+            RevealSearchResult(Result)
+        end
+
+        local function AddSegment(Parent, Order, Text, Icon, IsLast)
+            if Icon then
+                local Image = New("ImageLabel", {
+                    BackgroundTransparency = 1,
+                    ImageColor3 = "FontColor",
+                    ImageTransparency = 0.4,
+                    LayoutOrder = Order,
+                    Size = UDim2.fromOffset(16, 16),
+                    Parent = Parent,
+                })
+                Library:ApplyLucideIcon(Image, Icon)
+                Order += 1
+            end
+
+            New("TextLabel", {
+                AutomaticSize = Enum.AutomaticSize.X,
+                BackgroundTransparency = 1,
+                LayoutOrder = Order,
+                Size = UDim2.fromOffset(0, ResultHeight),
+                Text = Text,
+                TextColor3 = if IsLast then "AccentColor" else "FontColor",
+                TextSize = IsLast and 15 or 14,
+                TextTransparency = IsLast and 0 or 0.4,
+                Parent = Parent,
+            })
+            Order += 1
+
+            if not IsLast then
+                New("TextLabel", {
+                    AutomaticSize = Enum.AutomaticSize.X,
+                    BackgroundTransparency = 1,
+                    LayoutOrder = Order,
+                    Size = UDim2.fromOffset(0, ResultHeight),
+                    Text = ">",
+                    TextSize = 14,
+                    TextTransparency = 0.6,
+                    Parent = Parent,
+                })
+                Order += 1
+            end
+
+            return Order
+        end
+
+        Library.SearchResultsHandler = function(Results)
+            SearchResultsList = Results
+            ClearSearchRows()
+            SearchResults.CanvasPosition = Vector2.zero
+
+            if #Results == 0 then
+                HideSearchResults()
+                return
+            end
+
+            for Index, Result in Results do
+                local Row = New("TextButton", {
+                    AutoButtonColor = false,
+                    BackgroundColor3 = "MainColor",
+                    ClipsDescendants = true,
+                    LayoutOrder = Index,
+                    Size = UDim2.new(1, 0, 0, ResultHeight),
+                    Text = "",
+                    Parent = SearchResults,
+                })
+                New("UICorner", {
+                    CornerRadius = UDim.new(0, WindowInfo.CornerRadius / 2),
+                    Parent = Row,
+                })
+
+                local Content = New("Frame", {
+                    BackgroundTransparency = 1,
+                    Size = UDim2.fromScale(1, 1),
+                    Parent = Row,
+                })
+                New("UIListLayout", {
+                    FillDirection = Enum.FillDirection.Horizontal,
+                    Padding = UDim.new(0, 6),
+                    SortOrder = Enum.SortOrder.LayoutOrder,
+                    VerticalAlignment = Enum.VerticalAlignment.Center,
+                    Parent = Content,
+                })
+                New("UIPadding", {
+                    PaddingLeft = UDim.new(0, 10),
+                    PaddingRight = UDim.new(0, 10),
+                    Parent = Content,
+                })
+
+                local Order = AddSegment(Content, 0, Result.Tab.Name, Result.Tab.Icon)
+                for _, Step in Result.Chain do
+                    if typeof(Step.Name) == "string" and Trim(Step.Name) ~= "" then
+                        Order = AddSegment(Content, Order, Step.Name, Step.Icon)
+                    end
+                end
+                AddSegment(Content, Order, Result.Text, nil, true)
+
+                Row.MouseEnter:Connect(function()
+                    TweenService:Create(Row, Library.TweenInfo, {
+                        BackgroundColor3 = Library.Scheme.OutlineColor,
+                    }):Play()
+                end)
+                Row.MouseLeave:Connect(function()
+                    TweenService:Create(Row, Library.TweenInfo, {
+                        BackgroundColor3 = Library.Scheme.MainColor,
+                    }):Play()
+                end)
+                Row.MouseButton1Click:Connect(function()
+                    OpenSearchResult(Result)
+                end)
+            end
+
+            PlaceSearchResults()
+            SearchResults.Visible = Library.Toggled ~= false
+        end
+
+        Library:GiveSignal(SearchBox:GetPropertyChangedSignal("AbsolutePosition"):Connect(function()
+            if SearchResults.Visible then
+                PlaceSearchResults()
+            end
+        end))
+        Library:GiveSignal(SearchBox:GetPropertyChangedSignal("AbsoluteSize"):Connect(function()
+            if SearchResults.Visible then
+                PlaceSearchResults()
+            end
+        end))
+        Library:GiveSignal(SearchBox:GetPropertyChangedSignal("Visible"):Connect(function()
+            if not SearchBox.Visible then
+                HideSearchResults()
+            end
+        end))
+
+        --// Enter jumps to the best match; clicking anywhere else dismisses the list \\--
+        Library:GiveSignal(SearchBox.FocusLost:Connect(function(EnterPressed)
+            if EnterPressed and SearchResultsList[1] then
+                OpenSearchResult(SearchResultsList[1])
+            end
+        end))
+        Library:GiveSignal(UserInputService.InputBegan:Connect(function(Input)
+            if not SearchResults.Visible or not IsClickInput(Input) then
+                return
+            end
+
+            local Position = Vector2.new(Input.Position.X, Input.Position.Y)
+            if Library:MouseIsOverFrame(SearchResults, Position) or Library:MouseIsOverFrame(SearchBox, Position) then
+                return
+            end
+
+            HideSearchResults()
+        end))
+        Library:GiveSignal(SearchBox.Focused:Connect(function()
+            if #SearchResultsList > 0 then
+                PlaceSearchResults()
+                SearchResults.Visible = true
+            end
+        end))
+
         --// Minimize (Dynamic Island) \\--
         local MinimizeButton = New("ImageButton", {
             AnchorPoint = Vector2.new(1, 0.5),
@@ -12478,6 +12584,7 @@ function Library:CreateWindow(WindowInfo)
         local Tab = {
             Name = Name,
             Description = Description,
+            Icon = Icon,
 
             Tooltip = Tooltip,
             TooltipTable = nil,
@@ -12763,6 +12870,7 @@ function Library:CreateWindow(WindowInfo)
                 Tabs = {},
 
                 ParentBox = if IsNested then ParentObj else nil,
+                Page = if ParentObj.IsSubTab then ParentObj else nil,
             }
 
             function Tabbox:UpdateCorners()
@@ -12880,6 +12988,7 @@ function Library:CreateWindow(WindowInfo)
                 local Tab = {
                     Type = "SubTab",
                     Name = Name,
+                    Icon = BoxIcon,
 
                     Connections = {},
                     Destroyed = false,
@@ -13115,6 +13224,7 @@ function Library:CreateWindow(WindowInfo)
 
             local GroupboxCollapseArrow
             local GroupboxLine
+            local GroupboxIcon
 
             do
                 GroupboxHolder = New("Frame", {
@@ -13149,6 +13259,7 @@ function Library:CreateWindow(WindowInfo)
                 })
 
                 local BoxIcon = Library:GetCustomIcon(Info.IconName)
+                GroupboxIcon = BoxIcon
                 if BoxIcon then
                     local GroupboxHeaderIcon = New("ImageLabel", {
                         AnchorPoint = Vector2.new(0, 0.5),
@@ -13256,6 +13367,8 @@ function Library:CreateWindow(WindowInfo)
 
                 Name = Info.Name,
                 Description = Info.Description,
+                Icon = GroupboxIcon,
+                Page = if self.IsSubTab then self else nil,
 
                 Connections = {},
                 Destroyed = false,
@@ -14503,6 +14616,10 @@ function Library:CreateWindow(WindowInfo)
             Library.Toggled = Value
         else
             Library.Toggled = not Library.Toggled
+        end
+
+        if not Library.Toggled and Library.HideSearchResults then
+            Library.HideSearchResults()
         end
 
         if IslandMinimized and DismissIsland then

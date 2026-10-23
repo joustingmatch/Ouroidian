@@ -427,6 +427,7 @@ DropdownGroupBox:AddDropdown("MyMultiDropdown", {
 	Values = { "This", "is", "a", "dropdown" },
 	Default = 1,
 	Multi = true, -- true / false, allows multiple choices to be selected
+	SelectAll = true, -- true / false, shows a Select All / Deselect All row (Multi only, default true)
 
 	Text = "A multi dropdown",
 	Tooltip = "This is a tooltip", -- Information shown when you hover over the dropdown
