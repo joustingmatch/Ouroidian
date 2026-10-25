@@ -6,6 +6,7 @@ local clonefunction = (clonefunction or copyfunction or function(func)
 end)
 
 local HttpService: HttpService = cloneref(game:GetService("HttpService"))
+local Players: Players = cloneref(game:GetService("Players"))
 
 --// Fix is_____ functions for shitsploits, those functions should never error, only return a boolean. (why is this still a problem in the big 2026)
 local isfolder, isfile, listfiles = isfolder, isfile, listfiles
@@ -40,7 +41,8 @@ local SaveManager = {
     LoadingOrder = {},
     UseLoadingOrder = false,
 
-    AutoloadConfig = nil
+    AutoloadConfig = nil,
+    AutoloadScope = nil
 }
 
 function SaveManager:SetLibrary(Library)
@@ -329,9 +331,23 @@ local function DoesConfigExist(ConfigName: string): boolean
     return if ConfigPath == false then false else isfile(ConfigPath)
 end
 
-local function GetAutoloadPath(): false | string
+--// Scope is "Account" (only this UserId) or "All" (every account), defaults to "All"
+local function GetAutoloadPath(Scope: string?): false | string
     local CurrentSettingsPath = GetCurrentSettingsPath()
-    return if CurrentSettingsPath == false then false else string.format("%s/autoload.txt", CurrentSettingsPath)
+    if CurrentSettingsPath == false then
+        return false
+    end
+
+    if Scope == "Account" then
+        local LocalPlayer = Players.LocalPlayer
+        if not LocalPlayer then
+            return false
+        end
+
+        return string.format("%s/autoload_%d.txt", CurrentSettingsPath, LocalPlayer.UserId)
+    end
+
+    return string.format("%s/autoload.txt", CurrentSettingsPath)
 end
 
 --// Indexes \\--
@@ -436,7 +452,7 @@ function SaveManager:RefreshConfigList()
 
     local FileNames = {}
     for _, FilePath in Files do
-        local RawFileName = FilePath:match("(.+)%..+$")
+        local RawFileName = FilePath:match("(.+)%.json$")
         if not RawFileName then continue end
 
         local Position = RawFileName:gsub("\\", "/"):find("/[^/]*$")
@@ -703,18 +719,34 @@ function SaveManager:Delete(ConfigName: string): (boolean | string?)
         return false, "Failed to delete config file: " .. tostring(ErrorMessage)
     end
 
-    if ConfigName == SaveManager.AutoloadConfig then
-        SaveManager:DeleteAutoLoadConfig()
+    for _, Scope in { "Account", "All" } do
+        if SaveManager:GetAutoloadConfig(Scope) == ConfigName then
+            SaveManager:DeleteAutoLoadConfig(Scope)
+        end
     end
 
     return true
 end
 
 --// Auto Load Config \\--
-function SaveManager:GetAutoloadConfig(): (string, boolean, string?)
+--// Without a Scope, returns the effective autoload config: this account's first, then all accounts
+function SaveManager:GetAutoloadConfig(Scope: string?): (string, boolean, string?)
     SaveManager:CheckFolderTree()
 
-    local AutoloadPath = GetAutoloadPath()
+    if Scope == nil then
+        local ConfigName, Success, ErrorMessage = SaveManager:GetAutoloadConfig("Account")
+        Scope = "Account"
+        if not Success and ErrorMessage == "Autoload config is not set" then
+            ConfigName, Success, ErrorMessage = SaveManager:GetAutoloadConfig("All")
+            Scope = "All"
+        end
+
+        SaveManager.AutoloadConfig = if Success then ConfigName else nil
+        SaveManager.AutoloadScope = if Success then Scope else nil
+        return ConfigName, Success, ErrorMessage
+    end
+
+    local AutoloadPath = GetAutoloadPath(Scope)
     if AutoloadPath == false then
         return "none", false, "Invalid path provided"
     end
@@ -733,18 +765,17 @@ function SaveManager:GetAutoloadConfig(): (string, boolean, string?)
         return "none", false, "Config file not found"
     end
 
-    SaveManager.AutoloadConfig = AutoloadConfigName
     return AutoloadConfigName, true
 end
 
-function SaveManager:SaveAutoloadConfig(ConfigName: string): (boolean, string?)
+function SaveManager:SaveAutoloadConfig(ConfigName: string, Scope: string?): (boolean, string?)
     if IsStringEmpty(ConfigName) then
         return false, "No config is selected"
     end
 
     SaveManager:CheckFolderTree()
 
-    local AutoloadPath = GetAutoloadPath()
+    local AutoloadPath = GetAutoloadPath(Scope)
     if AutoloadPath == false then
         return false, "Invalid path provided"
     end
@@ -758,7 +789,7 @@ function SaveManager:SaveAutoloadConfig(ConfigName: string): (boolean, string?)
         return false, ErrorMessage
     end
 
-    SaveManager.AutoloadConfig = ConfigName
+    SaveManager:GetAutoloadConfig()
     return true
 end
 
@@ -781,10 +812,10 @@ function SaveManager:LoadAutoloadConfig()
     SaveManager.Library:Notify(string.format("Successfully loaded autoload config %q", ConfigName))
 end
 
-function SaveManager:DeleteAutoLoadConfig(): (boolean, string?)
+function SaveManager:DeleteAutoLoadConfig(Scope: string?): (boolean, string?)
     SaveManager:CheckFolderTree()
 
-    local AutoloadPath = GetAutoloadPath()
+    local AutoloadPath = GetAutoloadPath(Scope)
     if AutoloadPath == false then
         return false, "Invalid path provided"
     end
@@ -798,7 +829,7 @@ function SaveManager:DeleteAutoLoadConfig(): (boolean, string?)
         return false, ErrorMessage
     end
 
-    SaveManager.AutoloadConfig = nil
+    SaveManager:GetAutoloadConfig()
     return true
 end
 
@@ -860,9 +891,14 @@ function SaveManager:BuildConfigSection(Tab: any, IconName: string)
     end
 
     local function RefreshAutoloadConfigLabel()
-        local AutoloadConfigName, _Success, _ErrorMessage = SaveManager:GetAutoloadConfig()
+        local AccountConfigName = SaveManager:GetAutoloadConfig("Account")
+        local AllConfigName = SaveManager:GetAutoloadConfig("All")
+        SaveManager:GetAutoloadConfig()
 
-        AutoloadConfigLabel:SetText(string.format("Current autoload config: %s", AutoloadConfigName))
+        AutoloadConfigLabel:SetText(string.format(
+            "Autoload (this account): %s\nAutoload (all accounts): %s",
+            AccountConfigName, AllConfigName
+        ))
         if ConfigList then RefreshList() end
     end
 
@@ -1128,27 +1164,32 @@ function SaveManager:BuildConfigSection(Tab: any, IconName: string)
     ConfigurationBox:AddButton("Refresh list", RefreshList)
 
     --// Autoload Config
-    ConfigurationBox:AddButton({
-        Text = "Set as autoload",
-        DoubleClick = false,
+    local function AddAutoloadButton(Text: string, Scope: string, ScopeName: string)
+        ConfigurationBox:AddButton({
+            Text = Text,
+            DoubleClick = false,
 
-        Func = function()
-            local ConfigName = ConfigList.Value
-            if IsStringEmpty(ConfigName) then
-                SaveManager.Library:Notify("Please select a config first.")
-                return
+            Func = function()
+                local ConfigName = ConfigList.Value
+                if IsStringEmpty(ConfigName) then
+                    SaveManager.Library:Notify("Please select a config first.")
+                    return
+                end
+
+                local Success, ErrorMessage = SaveManager:SaveAutoloadConfig(ConfigName, Scope)
+                if not Success then
+                    SaveManager.Library:Notify(string.format("Failed to set autoload config %q: %s", ConfigName, ErrorMessage))
+                    return
+                end
+
+                SaveManager.Library:Notify(string.format("Successfully set autoload config for %s to %q", ScopeName, ConfigName))
+                RefreshAutoloadConfigLabel()
             end
+        })
+    end
 
-            local Success, ErrorMessage = SaveManager:SaveAutoloadConfig(ConfigName)
-            if not Success then
-                SaveManager.Library:Notify(string.format("Failed to set autoload config %q: %s", ConfigName, ErrorMessage))
-                return
-            end
-
-            SaveManager.Library:Notify(string.format("Successfully set autoload config to %q", ConfigName))
-            RefreshAutoloadConfigLabel()
-        end
-    })
+    AddAutoloadButton("Autoload: This Account", "Account", "this account")
+    AddAutoloadButton("Autoload: All Accounts", "All", "all accounts")
 
     ConfigurationBox:AddButton({
         Text = "Reset autoload",
@@ -1162,13 +1203,23 @@ function SaveManager:BuildConfigSection(Tab: any, IconName: string)
 
                 "SaveManager_ResetAutoload",
                 "Reset autoload config",
-                "Are you sure you want to clear the autoload config? No config will be loaded automatically on next launch.",
+                "Are you sure you want to clear the autoload configs for this account and all accounts? No config will be loaded automatically on next launch.",
                 
                 "Reset",
                 function()
-                    local Success, ErrorMessage = SaveManager:DeleteAutoLoadConfig()
-                    if not Success then
-                        SaveManager.Library:Notify(string.format("Failed to reset autoload config: %s", ErrorMessage))
+                    local ResetAny = false
+                    for _, Scope in { "Account", "All" } do
+                        local Success, ErrorMessage = SaveManager:DeleteAutoLoadConfig(Scope)
+                        if Success then
+                            ResetAny = true
+                        elseif ErrorMessage ~= "Autoload config is not set" then
+                            SaveManager.Library:Notify(string.format("Failed to reset autoload config: %s", ErrorMessage))
+                            return
+                        end
+                    end
+
+                    if not ResetAny then
+                        SaveManager.Library:Notify("Failed to reset autoload config: Autoload config is not set")
                         return
                     end
 
@@ -1179,7 +1230,7 @@ function SaveManager:BuildConfigSection(Tab: any, IconName: string)
         end
     })
 
-    AutoloadConfigLabel = ConfigurationBox:AddLabel("Current autoload config: ...", true);
+    AutoloadConfigLabel = ConfigurationBox:AddLabel("Autoload (this account): ...\nAutoload (all accounts): ...", true);
 
     ConfigurationBox:AddDivider()
 
