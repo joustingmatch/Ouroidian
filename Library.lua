@@ -11064,7 +11064,7 @@ function Library:CreateWindow(WindowInfo)
     local SearchBox
     local ResizeButton
     local IslandMinimized = false
-    local DismissIsland, SetIslandIcon
+    local DismissIsland, SetIslandIcon, MinimizeIsland
     local Tabs
     local Container
     local BackgroundImage
@@ -12407,6 +12407,7 @@ function Library:CreateWindow(WindowInfo)
             end
         end))
 
+        MinimizeIsland = MinimizeToIsland
         MinimizeButton.MouseButton1Click:Connect(function()
             task.spawn(MinimizeToIsland)
         end)
@@ -12573,6 +12574,12 @@ function Library:CreateWindow(WindowInfo)
         WindowInfo.IslandIcon = Icon
         if SetIslandIcon then
             SetIslandIcon(Icon)
+        end
+    end
+
+    function Window:Minimize()
+        if MinimizeIsland then
+            task.spawn(MinimizeIsland)
         end
     end
 

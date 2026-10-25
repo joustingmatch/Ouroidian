@@ -522,6 +522,11 @@ MenuGroup:AddToggle("AlwaysOnTop", {
 	end,
 })
 
+MenuGroup:AddToggle("AutoMinimize", {
+	Text = "Auto Minimize on Start",
+	Default = false,
+})
+
 MenuGroup:AddDropdown("NotificationSide", {
 	Text = "Notification Side",
 	Values = { "Left", "Right" },
@@ -588,6 +593,11 @@ SaveManager:BuildConfigSection(Tabs.Settings)
 ThemeManager:ApplyToTab(Tabs.Settings)
 
 SaveManager:LoadAutoloadConfig()
+
+-- Runs once per execution, after autoload so the saved value applies
+if Toggles.AutoMinimize.Value then
+	Window:Minimize()
+end
 
 Library:Notify({
 	Title = "Ouroidian",

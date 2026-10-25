@@ -1035,6 +1035,7 @@ export type Window = {
     SetBackgroundImage: (self: Window, Image: string) -> (),
     SetFooter: (self: Window, Footer: string) -> (),
     SetAlwaysOnTop: (self: Window, Enabled: boolean) -> (),
+    Minimize: (self: Window) -> (),
     SetCornerRadius: (self: Window, Radius: number) -> (),
     SetSnapping: (
         self: Window,
