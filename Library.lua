@@ -291,7 +291,7 @@ local Library = {
         AccentColor = Color3.fromHex("b7f34a"),
         OutlineColor = Color3.fromHex("303030"),
         FontColor = Color3.fromHex("f3f3ee"),
-        Font = Font.fromEnum(Enum.Font.Code),
+        Font = Font.fromEnum(Enum.Font.BuilderSans),
 
         RedColor = Color3.fromRGB(255, 50, 50),
         DestructiveColor = Color3.fromRGB(220, 38, 38),
@@ -408,7 +408,7 @@ local Templates = {
         CornerRadius = 4,
         NotifySide = "Right",
     
-        Font = Enum.Font.Code,
+        Font = Enum.Font.BuilderSans,
         ToggleKeybind = Enum.KeyCode.RightControl,
 
         ShowMobileButtons = true,
@@ -13174,7 +13174,7 @@ function Library:CreateWindow(WindowInfo)
             UDim2.fromOffset(14, 34),
             UDim2.new(0.5, -18, 0, 36)
         )
-        LinkButton.Font = Enum.Font.Code
+        LinkButton.Font = Enum.Font.BuilderSans
         local JoinButton = ActionButton("Join Server", true, UDim2.new(0.5, 4, 0, 34), UDim2.new(0.5, -18, 0, 36))
 
         local function CopyInvite()
